@@ -91,8 +91,9 @@ export default function Tasks({ user }) {
       });
       toast.success('Task created successfully!');
       setCreateDialogOpen(false);
-      setNewTask({ title: '', description: '', priority: 'medium', due_date: '' });
+      setNewTask({ title: '', description: '', priority: 'medium', due_date: '', workflow_id: '' });
       fetchTasks();
+      fetchPendingApprovals();
     } catch (error) {
       toast.error('Failed to create task');
     }
