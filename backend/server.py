@@ -545,6 +545,17 @@ async def create_task(task_data: TaskCreate, current_user: User = Depends(get_cu
     task = Task(**task_data.model_dump(), creator_id=current_user.id)
     await db.tasks.insert_one(task.model_dump())
     await log_audit(current_user.id, "task.create", "task", task.id)
+    
+    # Auto-start workflow if assigned
+    if task.workflow_id:
+        global workflow_engine
+        if not workflow_engine:
+            workflow_engine = WorkflowEngine(db)
+        try:
+            await workflow_engine.start_workflow(task.id, task.workflow_id, current_user.id)
+        except Exception as e:
+            logger.warning(f"Failed to start workflow for task {task.id}: {str(e)}")
+    
     return task
 
 @api_router.get("/tasks/{task_id}", response_model=Task)
