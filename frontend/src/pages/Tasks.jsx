@@ -114,6 +114,38 @@ export default function Tasks({ user }) {
     }
   };
 
+  const progressWorkflow = async (taskId) => {
+    const token = localStorage.getItem('token');
+    try {
+      await axios.post(
+        `${API}/tasks/${taskId}/workflow/progress`,
+        { action: 'progress', comment: 'Progressed via UI' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('Workflow progressed');
+      fetchTasks();
+      fetchPendingApprovals();
+    } catch (error) {
+      toast.error('Failed to progress workflow');
+    }
+  };
+
+  const approveWorkflowStep = async (taskId, stepId, action, comment = '') => {
+    const token = localStorage.getItem('token');
+    try {
+      await axios.post(
+        `${API}/tasks/${taskId}/workflow/approve`,
+        { task_id: taskId, step_id: stepId, action, comment },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success(`Step ${action}d`);
+      fetchTasks();
+      fetchPendingApprovals();
+    } catch (error) {
+      toast.error(`Failed to ${action} step`);
+    }
+  };
+
   const filteredTasks = tasks.filter((task) =>
     task.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
