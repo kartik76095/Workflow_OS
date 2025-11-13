@@ -155,7 +155,6 @@ class WorkflowApproval(BaseModel):
     comment: Optional[str] = None
 
 class WorkflowStepUpdate(BaseModel):
-    task_id: str
     action: str  # "start", "complete", "approve", "reject"
     comment: Optional[str] = None
 
