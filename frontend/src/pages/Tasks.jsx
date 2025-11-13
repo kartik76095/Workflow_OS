@@ -360,7 +360,38 @@ export default function Tasks({ user }) {
         </Dialog>
       </div>
 
-      {/* Search and Filter */}
+      {/* Pending Approvals */}
+      {pendingApprovals.length > 0 && (
+        <Card className="p-6 bg-gradient-to-r from-[#feebc8] to-[#fed7d7] border-[#ed8936]">
+          <h3 className="text-lg font-semibold text-[#c05621] mb-4 flex items-center">
+            ⏳ Pending Approvals ({pendingApprovals.length})
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pendingApprovals.slice(0, 6).map((item, idx) => (
+              <div key={idx} className="bg-white p-4 rounded-lg shadow-sm">
+                <h4 className="font-medium text-[#1a202c] mb-2">{item.task.title}</h4>
+                <p className="text-sm text-[#718096] mb-3">Step: {item.workflow_step}</p>
+                <div className="flex space-x-2">
+                  <Button
+                    size="sm"
+                    onClick={() => approveWorkflowStep(item.task.id, item.approval.step_id, 'approve')}
+                    style={{ backgroundColor: '#48bb78' }}
+                  >
+                    ✓ Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => approveWorkflowStep(item.task.id, item.approval.step_id, 'reject')}
+                  >
+                    ✗ Reject
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
       <div className="flex items-center space-x-4">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#718096]" />
