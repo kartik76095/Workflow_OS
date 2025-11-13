@@ -171,6 +171,233 @@ class AuditLog(BaseModel):
     ip_address: Optional[str] = None
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+# ==================== WORKFLOW ENGINE ====================
+
+class WorkflowEngine:
+    def __init__(self, db):
+        self.db = db
+    
+    async def start_workflow(self, task_id: str, workflow_id: str, user_id: str):
+        """Start a workflow for a task"""
+        workflow = await self.db.workflows.find_one({"id": workflow_id}, {"_id": 0})
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        # Get first node in workflow
+        first_node = None
+        if workflow.get("nodes"):
+            # Find node with no incoming edges or first task node
+            edges = workflow.get("edges", [])
+            incoming_nodes = {edge["target"] for edge in edges}
+            for node in workflow["nodes"]:
+                if node["id"] not in incoming_nodes or node["type"] == "task":
+                    first_node = node
+                    break
+        
+        if not first_node:
+            raise HTTPException(status_code=400, detail="Workflow has no starting node")
+        
+        # Update task with workflow state
+        workflow_state = {
+            "current_step": first_node["id"],
+            "step_history": [{
+                "step_id": first_node["id"],
+                "step_name": first_node["label"],
+                "status": "started",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "started_by": user_id
+            }],
+            "pending_approvals": [],
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "completed_steps": []
+        }
+        
+        await self.db.tasks.update_one(
+            {"id": task_id},
+            {"$set": {
+                "workflow_id": workflow_id,
+                "workflow_state": workflow_state,
+                "status": "in_progress",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        
+        await log_audit(user_id, "workflow.start", "task", task_id, {"workflow_id": workflow_id})
+        return workflow_state
+    
+    async def progress_workflow(self, task_id: str, user_id: str, comment: str = None):
+        """Move task to next step in workflow"""
+        task = await self.db.tasks.find_one({"id": task_id}, {"_id": 0})
+        if not task or not task.get("workflow_id"):
+            raise HTTPException(status_code=404, detail="Task or workflow not found")
+        
+        workflow = await self.db.workflows.find_one({"id": task["workflow_id"]}, {"_id": 0})
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        current_step_id = task["workflow_state"]["current_step"]
+        current_node = next((n for n in workflow["nodes"] if n["id"] == current_step_id), None)
+        
+        if not current_node:
+            raise HTTPException(status_code=400, detail="Current workflow step not found")
+        
+        # Find next step
+        next_step = await self._get_next_step(workflow, current_step_id, task)
+        
+        # Update workflow state
+        workflow_state = task["workflow_state"]
+        
+        # Complete current step
+        workflow_state["completed_steps"].append({
+            "step_id": current_step_id,
+            "step_name": current_node["label"],
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_by": user_id,
+            "comment": comment
+        })
+        
+        if next_step:
+            # Move to next step
+            workflow_state["current_step"] = next_step["id"]
+            workflow_state["step_history"].append({
+                "step_id": next_step["id"],
+                "step_name": next_step["label"],
+                "status": "started",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "started_by": user_id
+            })
+            
+            # Handle different node types
+            if next_step["type"] == "approval":
+                # Add to pending approvals
+                workflow_state["pending_approvals"].append({
+                    "step_id": next_step["id"],
+                    "step_name": next_step["label"],
+                    "assigned_to": task.get("assignee_id") or user_id,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                })
+            
+            task_status = "in_progress"
+        else:
+            # Workflow complete
+            workflow_state["current_step"] = None
+            task_status = "completed"
+            workflow_state["completed_at"] = datetime.now(timezone.utc).isoformat()
+        
+        await self.db.tasks.update_one(
+            {"id": task_id},
+            {"$set": {
+                "workflow_state": workflow_state,
+                "status": task_status,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        
+        await log_audit(user_id, "workflow.progress", "task", task_id)
+        return workflow_state
+    
+    async def approve_step(self, task_id: str, step_id: str, user_id: str, action: str, comment: str = None):
+        """Approve or reject a workflow step"""
+        task = await self.db.tasks.find_one({"id": task_id}, {"_id": 0})
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        workflow_state = task["workflow_state"]
+        
+        # Find and remove from pending approvals
+        approval = None
+        for i, pending in enumerate(workflow_state["pending_approvals"]):
+            if pending["step_id"] == step_id:
+                approval = workflow_state["pending_approvals"].pop(i)
+                break
+        
+        if not approval:
+            raise HTTPException(status_code=400, detail="No pending approval found for this step")
+        
+        # Add to step history
+        workflow_state["step_history"].append({
+            "step_id": step_id,
+            "step_name": approval["step_name"],
+            "status": action,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_by": user_id,
+            "comment": comment
+        })
+        
+        if action == "approve":
+            # Continue workflow
+            await self.progress_workflow(task_id, user_id, f"Approved: {comment or ''}")
+        else:
+            # Reject - could stop workflow or go back to previous step
+            workflow_state["current_step"] = None
+            await self.db.tasks.update_one(
+                {"id": task_id},
+                {"$set": {
+                    "workflow_state": workflow_state,
+                    "status": "on_hold",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+        
+        await log_audit(user_id, f"workflow.{action}", "task", task_id)
+        return workflow_state
+    
+    async def _get_next_step(self, workflow: Dict, current_step_id: str, task: Dict):
+        """Find the next step in workflow"""
+        edges = workflow.get("edges", [])
+        
+        # Find edges from current step
+        next_edges = [e for e in edges if e["source"] == current_step_id]
+        
+        if not next_edges:
+            return None  # End of workflow
+        
+        # For now, take first edge (in real implementation, handle conditions)
+        next_edge = next_edges[0]
+        next_node = next((n for n in workflow["nodes"] if n["id"] == next_edge["target"]), None)
+        
+        # Handle condition nodes
+        if next_node and next_node["type"] == "condition":
+            return await self._evaluate_condition(workflow, next_node, task)
+        
+        return next_node
+    
+    async def _evaluate_condition(self, workflow: Dict, condition_node: Dict, task: Dict):
+        """Evaluate condition and return next node"""
+        # Simple condition evaluation based on task metadata
+        condition_data = condition_node.get("data", {})
+        condition_text = condition_data.get("condition", "")
+        
+        # Example: "amount > 5000"
+        if "amount" in condition_text and ">" in condition_text:
+            try:
+                amount = float(task["metadata"].get("amount", 0))
+                threshold = float(condition_text.split(">")[1].strip())
+                condition_met = amount > threshold
+            except:
+                condition_met = False
+        else:
+            condition_met = True  # Default to true
+        
+        # Find appropriate edge
+        edges = workflow.get("edges", [])
+        condition_edges = [e for e in edges if e["source"] == condition_node["id"]]
+        
+        for edge in condition_edges:
+            if (condition_met and edge.get("label", "").lower() in ["yes", "true"]) or \
+               (not condition_met and edge.get("label", "").lower() in ["no", "false"]):
+                return next((n for n in workflow["nodes"] if n["id"] == edge["target"]), None)
+        
+        # Default to first edge
+        if condition_edges:
+            next_edge = condition_edges[0]
+            return next((n for n in workflow["nodes"] if n["id"] == next_edge["target"]), None)
+        
+        return None
+
+# Global workflow engine instance
+workflow_engine = None
+
 # ==================== AUTHENTICATION ====================
 
 def hash_password(password: str) -> str:
