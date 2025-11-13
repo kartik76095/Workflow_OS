@@ -31,6 +31,8 @@ export default function Tasks({ user }) {
 
   useEffect(() => {
     fetchTasks();
+    fetchWorkflows();
+    fetchPendingApprovals();
   }, [filterStatus]);
 
   const fetchTasks = async () => {
@@ -49,6 +51,30 @@ export default function Tasks({ user }) {
       toast.error('Failed to fetch tasks');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchWorkflows = async () => {
+    const token = localStorage.getItem('token');
+    try {
+      const res = await axios.get(`${API}/workflows`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setWorkflows(res.data.workflows || []);
+    } catch (error) {
+      console.error('Failed to fetch workflows:', error);
+    }
+  };
+
+  const fetchPendingApprovals = async () => {
+    const token = localStorage.getItem('token');
+    try {
+      const res = await axios.get(`${API}/workflows/pending-approvals`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setPendingApprovals(res.data.pending_approvals || []);
+    } catch (error) {
+      console.error('Failed to fetch pending approvals:', error);
     }
   };
 
