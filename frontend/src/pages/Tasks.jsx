@@ -13,6 +13,8 @@ const API = `${BACKEND_URL}/api`;
 
 export default function Tasks({ user }) {
   const [tasks, setTasks] = useState([]);
+  const [workflows, setWorkflows] = useState([]);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState('all');
@@ -24,6 +26,7 @@ export default function Tasks({ user }) {
     description: '',
     priority: 'medium',
     due_date: '',
+    workflow_id: '',
   });
 
   useEffect(() => {
