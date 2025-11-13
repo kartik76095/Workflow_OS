@@ -335,12 +335,12 @@ export default function Tasks({ user }) {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Workflow (Optional)</label>
-                <Select value={newTask.workflow_id} onValueChange={(val) => setNewTask({ ...newTask, workflow_id: val })}>
+                <Select value={newTask.workflow_id || 'none'} onValueChange={(val) => setNewTask({ ...newTask, workflow_id: val === 'none' ? '' : val })}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a workflow" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">
+                    <SelectItem value="none">
                       <span>No Workflow</span>
                     </SelectItem>
                     {workflows.map((workflow) => (
