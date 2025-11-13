@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Workflow, Plus, Sparkles } from 'lucide-react';
+import { Workflow, Plus, Sparkles, X, GitBranch } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
@@ -14,6 +14,8 @@ export default function Workflows() {
   const [workflows, setWorkflows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [selectedWorkflow, setSelectedWorkflow] = useState(null);
   const [aiPrompt, setAiPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
 
