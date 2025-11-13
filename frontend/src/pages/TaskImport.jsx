@@ -138,11 +138,11 @@ export default function TaskImport() {
             className="hidden"
             id="file-upload"
           />
-          <label htmlFor="file-upload" className="cursor-pointer">
-            <Button data-testid="select-file-button" as="span" variant="outline">
+          <label htmlFor="file-upload" className="cursor-pointer inline-block">
+            <div className="px-4 py-2 border border-[#e2e8f0] rounded-md bg-white hover:bg-[#eff2f5] transition-colors flex items-center">
               <Upload className="w-4 h-4 mr-2" />
               Select File
-            </Button>
+            </div>
           </label>
           <p className="text-sm text-[#718096] mt-3">
             {file ? file.name : 'CSV or XLSX files, max 10MB'}
