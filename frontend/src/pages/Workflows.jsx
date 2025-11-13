@@ -149,6 +149,11 @@ export default function Workflows() {
           {workflows.map((workflow) => (
             <Card
               key={workflow.id}
+              data-testid={`workflow-${workflow.id}`}
+              onClick={() => {
+                setSelectedWorkflow(workflow);
+                setViewDialogOpen(true);
+              }}
               className="p-6 bg-white border border-[#e2e8f0] hover:shadow-lg transition-shadow cursor-pointer"
             >
               <div className="flex items-start justify-between mb-4">
@@ -170,6 +175,138 @@ export default function Workflows() {
           ))}
         </div>
       )}
+
+      {/* Workflow Viewer Dialog */}
+      <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <Workflow className="w-6 h-6 mr-2 text-[#0a69a7]" />
+              {selectedWorkflow?.name}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedWorkflow && (
+            <div className="space-y-6 mt-4">
+              {/* Description */}
+              <div>
+                <h4 className="text-sm font-medium text-[#718096] mb-2">Description</h4>
+                <p className="text-[#1a202c]">{selectedWorkflow.description || 'No description provided'}</p>
+              </div>
+
+              {/* Workflow Nodes */}
+              <div>
+                <h4 className="text-sm font-medium text-[#718096] mb-3">Workflow Steps</h4>
+                <div className="space-y-3">
+                  {selectedWorkflow.nodes && selectedWorkflow.nodes.length > 0 ? (
+                    selectedWorkflow.nodes.map((node, idx) => (
+                      <div
+                        key={node.id}
+                        className="flex items-start p-4 bg-[#eff2f5] rounded-lg border-l-4"
+                        style={{
+                          borderLeftColor: 
+                            node.type === 'task' ? '#0a69a7' :
+                            node.type === 'approval' ? '#48bb78' :
+                            node.type === 'condition' ? '#ed8936' :
+                            '#718096'
+                        }}
+                      >
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-white flex items-center justify-center font-semibold text-sm mr-3">
+                          {idx + 1}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center mb-1">
+                            <h5 className="font-semibold text-[#1a202c]">{node.label}</h5>
+                            <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded capitalize"
+                              style={{
+                                backgroundColor: 
+                                  node.type === 'task' ? '#bee3f8' :
+                                  node.type === 'approval' ? '#c6f6d5' :
+                                  node.type === 'condition' ? '#feebc8' :
+                                  '#e2e8f0',
+                                color:
+                                  node.type === 'task' ? '#2c5282' :
+                                  node.type === 'approval' ? '#22543d' :
+                                  node.type === 'condition' ? '#c05621' :
+                                  '#4a5568'
+                              }}
+                            >
+                              {node.type}
+                            </span>
+                          </div>
+                          {node.data && Object.keys(node.data).length > 0 && (
+                            <p className="text-sm text-[#718096]">
+                              {JSON.stringify(node.data)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-[#718096] text-center py-4">No workflow steps defined</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Connections */}
+              {selectedWorkflow.edges && selectedWorkflow.edges.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium text-[#718096] mb-3">Connections</h4>
+                  <div className="space-y-2">
+                    {selectedWorkflow.edges.map((edge) => {
+                      const sourceNode = selectedWorkflow.nodes?.find(n => n.id === edge.source);
+                      const targetNode = selectedWorkflow.nodes?.find(n => n.id === edge.target);
+                      return (
+                        <div key={edge.id} className="flex items-center text-sm text-[#1a202c] p-3 bg-[#eff2f5] rounded">
+                          <span className="font-medium">{sourceNode?.label || edge.source}</span>
+                          <GitBranch className="w-4 h-4 mx-2 text-[#718096]" />
+                          <span className="font-medium">{targetNode?.label || edge.target}</span>
+                          {edge.label && (
+                            <span className="ml-2 text-xs text-[#718096]">({edge.label})</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Rules */}
+              {selectedWorkflow.rules && selectedWorkflow.rules.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium text-[#718096] mb-3">Automation Rules</h4>
+                  <div className="space-y-2">
+                    {selectedWorkflow.rules.map((rule, idx) => (
+                      <div key={idx} className="p-3 bg-[#eff2f5] rounded">
+                        <p className="text-sm font-medium text-[#1a202c]">{rule.condition}</p>
+                        <p className="text-xs text-[#718096] mt-1">Action: {rule.action}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Metadata */}
+              <div className="pt-4 border-t border-[#e2e8f0]">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-[#718096]">Status</p>
+                    <p className="font-medium text-[#1a202c]">
+                      {selectedWorkflow.is_active ? '✅ Active' : '⏸️ Inactive'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[#718096]">Type</p>
+                    <p className="font-medium text-[#1a202c]">
+                      {selectedWorkflow.is_template ? '📋 Template' : '🔄 Workflow'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
