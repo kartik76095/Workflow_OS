@@ -906,29 +906,6 @@ async def get_task_workflow_status(
     
     return result
 
-@api_router.get("/workflows/pending-approvals")
-async def get_pending_approvals(current_user: User = Depends(get_current_user)):
-    """Get tasks with pending approvals for current user"""
-    query = {
-        "workflow_state.pending_approvals": {
-            "$elemMatch": {"assigned_to": current_user.id}
-        }
-    }
-    
-    tasks = await db.tasks.find(query, {"_id": 0}).to_list(100)
-    
-    pending_tasks = []
-    for task in tasks:
-        for approval in task["workflow_state"]["pending_approvals"]:
-            if approval["assigned_to"] == current_user.id:
-                pending_tasks.append({
-                    "task": task,
-                    "approval": approval,
-                    "workflow_step": approval["step_name"]
-                })
-    
-    return {"pending_approvals": pending_tasks}
-
 # ==================== AI ASSISTANT ENDPOINTS ====================
 
 @api_router.post("/ai/generate-workflow")
