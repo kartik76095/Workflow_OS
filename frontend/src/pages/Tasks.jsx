@@ -333,6 +333,25 @@ export default function Tasks({ user }) {
                   onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })}
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Workflow (Optional)</label>
+                <Select value={newTask.workflow_id} onValueChange={(val) => setNewTask({ ...newTask, workflow_id: val })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a workflow" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">No Workflow</SelectItem>
+                    {workflows.map((workflow) => (
+                      <SelectItem key={workflow.id} value={workflow.id}>
+                        {workflow.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-[#718096] mt-1">
+                  {newTask.workflow_id ? '🔄 Task will start in selected workflow' : 'Task will be created without workflow'}
+                </p>
+              </div>
               <Button onClick={createTask} className="w-full" style={{ backgroundColor: '#0a69a7' }}>
                 Create Task
               </Button>
