@@ -157,49 +157,120 @@ export default function Tasks({ user }) {
     completed: filteredTasks.filter((t) => t.status === 'completed'),
   };
 
-  const TaskCard = ({ task }) => (
-    <div
-      data-testid={`task-${task.id}`}
-      className="bg-white p-4 rounded-lg border border-[#e2e8f0] shadow-sm hover:shadow-md transition-all cursor-pointer"
-    >
-      <h4 className="font-medium text-[#1a202c] mb-2">{task.title}</h4>
-      <p className="text-sm text-[#718096] mb-3">{task.description || 'No description'}</p>
-      <div className="flex items-center justify-between">
-        <span
-          className="px-2 py-1 text-xs font-medium rounded capitalize"
-          style={{
-            backgroundColor:
-              task.priority === 'critical'
-                ? '#fed7d7'
-                : task.priority === 'high'
-                ? '#feebc8'
-                : task.priority === 'medium'
-                ? '#bee3f8'
-                : '#c6f6d5',
-            color:
-              task.priority === 'critical'
-                ? '#c53030'
-                : task.priority === 'high'
-                ? '#c05621'
-                : task.priority === 'medium'
-                ? '#2c5282'
-                : '#22543d',
-          }}
-        >
-          {task.priority}
-        </span>
-        {task.status !== 'completed' && (
-          <Button
-            size="sm"
-            onClick={() => updateTaskStatus(task.id, 'completed')}
-            style={{ backgroundColor: '#48bb78' }}
-          >
-            Complete
-          </Button>
+  const TaskCard = ({ task }) => {
+    const hasWorkflow = task.workflow_id;
+    const workflowState = task.workflow_state;
+    const currentStep = workflowState?.current_step;
+    const pendingApproval = workflowState?.pending_approvals?.find(p => p.assigned_to === user.id);
+
+    return (
+      <div
+        data-testid={`task-${task.id}`}
+        className="bg-white p-4 rounded-lg border border-[#e2e8f0] shadow-sm hover:shadow-md transition-all cursor-pointer"
+      >
+        <h4 className="font-medium text-[#1a202c] mb-2">{task.title}</h4>
+        <p className="text-sm text-[#718096] mb-3">{task.description || 'No description'}</p>
+        
+        {/* Workflow Status */}
+        {hasWorkflow && (
+          <div className="mb-3 p-2 bg-[#eff2f5] rounded text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-[#0a69a7]">🔄 In Workflow</span>
+              {currentStep && (
+                <span className="text-[#718096]">
+                  Step: {workflowState.step_history?.find(s => s.step_id === currentStep)?.step_name || currentStep}
+                </span>
+              )}
+            </div>
+            {workflowState?.completed_steps?.length > 0 && (
+              <div className="mt-1 text-[#48bb78]">
+                ✅ {workflowState.completed_steps.length} steps completed
+              </div>
+            )}
+          </div>
         )}
+
+        {/* Pending Approval */}
+        {pendingApproval && (
+          <div className="mb-3 p-2 bg-[#feebc8] rounded text-xs">
+            <p className="font-medium text-[#c05621] mb-2">⏳ Needs Your Approval</p>
+            <div className="flex space-x-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  approveWorkflowStep(task.id, pendingApproval.step_id, 'approve');
+                }}
+                className="px-2 py-1 bg-[#48bb78] text-white rounded text-xs hover:bg-[#38a169]"
+              >
+                ✓ Approve
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  approveWorkflowStep(task.id, pendingApproval.step_id, 'reject');
+                }}
+                className="px-2 py-1 bg-[#f56565] text-white rounded text-xs hover:bg-[#e53e3e]"
+              >
+                ✗ Reject
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <span
+            className="px-2 py-1 text-xs font-medium rounded capitalize"
+            style={{
+              backgroundColor:
+                task.priority === 'critical'
+                  ? '#fed7d7'
+                  : task.priority === 'high'
+                  ? '#feebc8'
+                  : task.priority === 'medium'
+                  ? '#bee3f8'
+                  : '#c6f6d5',
+              color:
+                task.priority === 'critical'
+                  ? '#c53030'
+                  : task.priority === 'high'
+                  ? '#c05621'
+                  : task.priority === 'medium'
+                  ? '#2c5282'
+                  : '#22543d',
+            }}
+          >
+            {task.priority}
+          </span>
+          
+          <div className="flex space-x-2">
+            {hasWorkflow && currentStep && !pendingApproval ? (
+              <Button
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  progressWorkflow(task.id);
+                }}
+                style={{ backgroundColor: '#0a69a7' }}
+              >
+                Next Step
+              </Button>
+            ) : !hasWorkflow && task.status !== 'completed' ? (
+              <Button
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  updateTaskStatus(task.id, 'completed');
+                }}
+                style={{ backgroundColor: '#48bb78' }}
+              >
+                Complete
+              </Button>
+            ) : null}
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div data-testid="tasks-page" className="space-y-6">
