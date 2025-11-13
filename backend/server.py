@@ -71,6 +71,7 @@ class TaskCreate(BaseModel):
     due_date: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    workflow_id: Optional[str] = None
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -80,6 +81,7 @@ class TaskUpdate(BaseModel):
     assignee_id: Optional[str] = None
     due_date: Optional[str] = None
     tags: Optional[List[str]] = None
+    workflow_id: Optional[str] = None
 
 class Task(BaseModel):
     model_config = ConfigDict(extra="ignore")
