@@ -793,6 +793,29 @@ async def create_workflow(workflow_data: WorkflowCreate, current_user: User = De
     await log_audit(current_user.id, "workflow.create", "workflow", workflow.id)
     return workflow
 
+@api_router.get("/workflows/pending-approvals")
+async def get_pending_approvals(current_user: User = Depends(get_current_user)):
+    """Get tasks with pending approvals for current user"""
+    query = {
+        "workflow_state.pending_approvals": {
+            "$elemMatch": {"assigned_to": current_user.id}
+        }
+    }
+    
+    tasks = await db.tasks.find(query, {"_id": 0}).to_list(100)
+    
+    pending_tasks = []
+    for task in tasks:
+        for approval in task["workflow_state"]["pending_approvals"]:
+            if approval["assigned_to"] == current_user.id:
+                pending_tasks.append({
+                    "task": task,
+                    "approval": approval,
+                    "workflow_step": approval["step_name"]
+                })
+    
+    return {"pending_approvals": pending_tasks}
+
 @api_router.get("/workflows/{workflow_id}", response_model=Workflow)
 async def get_workflow(workflow_id: str, current_user: User = Depends(get_current_user)):
     workflow = await db.workflows.find_one({"id": workflow_id}, {"_id": 0})
