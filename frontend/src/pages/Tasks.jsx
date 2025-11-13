@@ -340,10 +340,12 @@ export default function Tasks({ user }) {
                     <SelectValue placeholder="Select a workflow" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No Workflow</SelectItem>
+                    <SelectItem value="">
+                      <span>No Workflow</span>
+                    </SelectItem>
                     {workflows.map((workflow) => (
                       <SelectItem key={workflow.id} value={workflow.id}>
-                        {workflow.name}
+                        <span>{workflow.name}</span>
                       </SelectItem>
                     ))}
                   </SelectContent>
