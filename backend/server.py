@@ -98,6 +98,16 @@ class Task(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     comments: List[Dict[str, Any]] = Field(default_factory=list)
     attachments: List[Dict[str, Any]] = Field(default_factory=list)
+    
+    # Workflow Execution Fields
+    workflow_state: Dict[str, Any] = Field(default_factory=lambda: {
+        "current_step": None,
+        "step_history": [],
+        "pending_approvals": [],
+        "started_at": None,
+        "completed_steps": []
+    })
+    
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     completed_at: Optional[str] = None
