@@ -147,6 +147,18 @@ class AIChatMessage(BaseModel):
     message: str
     session_id: Optional[str] = None
 
+# Workflow Execution Models
+class WorkflowApproval(BaseModel):
+    task_id: str
+    step_id: str
+    action: str  # "approve" or "reject"
+    comment: Optional[str] = None
+
+class WorkflowStepUpdate(BaseModel):
+    task_id: str
+    action: str  # "start", "complete", "approve", "reject"
+    comment: Optional[str] = None
+
 # Audit Log Model
 class AuditLog(BaseModel):
     model_config = ConfigDict(extra="ignore")
