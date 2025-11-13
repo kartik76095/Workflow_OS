@@ -790,6 +790,112 @@ async def get_workflow(workflow_id: str, current_user: User = Depends(get_curren
         raise HTTPException(status_code=404, detail="Workflow not found")
     return Workflow(**workflow)
 
+# ==================== WORKFLOW EXECUTION ENDPOINTS ====================
+
+@api_router.post("/tasks/{task_id}/workflow/start")
+async def start_task_workflow(
+    task_id: str,
+    workflow_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Start a workflow for a task"""
+    global workflow_engine
+    if not workflow_engine:
+        workflow_engine = WorkflowEngine(db)
+    
+    try:
+        workflow_state = await workflow_engine.start_workflow(task_id, workflow_id, current_user.id)
+        return {"status": "started", "workflow_state": workflow_state}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.post("/tasks/{task_id}/workflow/progress")
+async def progress_task_workflow(
+    task_id: str,
+    request: WorkflowStepUpdate,
+    current_user: User = Depends(get_current_user)
+):
+    """Progress task to next workflow step"""
+    global workflow_engine
+    if not workflow_engine:
+        workflow_engine = WorkflowEngine(db)
+    
+    try:
+        workflow_state = await workflow_engine.progress_workflow(
+            task_id, current_user.id, request.comment
+        )
+        return {"status": "progressed", "workflow_state": workflow_state}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.post("/tasks/{task_id}/workflow/approve")
+async def approve_workflow_step(
+    task_id: str,
+    request: WorkflowApproval,
+    current_user: User = Depends(get_current_user)
+):
+    """Approve or reject a workflow step"""
+    global workflow_engine
+    if not workflow_engine:
+        workflow_engine = WorkflowEngine(db)
+    
+    try:
+        workflow_state = await workflow_engine.approve_step(
+            task_id, request.step_id, current_user.id, request.action, request.comment
+        )
+        return {"status": request.action, "workflow_state": workflow_state}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.get("/tasks/{task_id}/workflow/status")
+async def get_task_workflow_status(
+    task_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get workflow status for a task"""
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    workflow_state = task.get("workflow_state")
+    workflow_id = task.get("workflow_id")
+    
+    result = {
+        "task_id": task_id,
+        "workflow_id": workflow_id,
+        "workflow_state": workflow_state,
+        "has_workflow": bool(workflow_id)
+    }
+    
+    if workflow_id:
+        workflow = await db.workflows.find_one({"id": workflow_id}, {"_id": 0})
+        result["workflow"] = workflow
+    
+    return result
+
+@api_router.get("/workflows/pending-approvals")
+async def get_pending_approvals(current_user: User = Depends(get_current_user)):
+    """Get tasks with pending approvals for current user"""
+    query = {
+        "workflow_state.pending_approvals": {
+            "$elemMatch": {"assigned_to": current_user.id}
+        }
+    }
+    
+    tasks = await db.tasks.find(query, {"_id": 0}).to_list(100)
+    
+    pending_tasks = []
+    for task in tasks:
+        for approval in task["workflow_state"]["pending_approvals"]:
+            if approval["assigned_to"] == current_user.id:
+                pending_tasks.append({
+                    "task": task,
+                    "approval": approval,
+                    "workflow_step": approval["step_name"]
+                })
+    
+    return {"pending_approvals": pending_tasks}
+
 # ==================== AI ASSISTANT ENDPOINTS ====================
 
 @api_router.post("/ai/generate-workflow")
