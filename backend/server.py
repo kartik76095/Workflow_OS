@@ -874,6 +874,21 @@ async def log_audit(user_id: str, action: str, resource_type: str, resource_id: 
     )
     await db.audit_logs.insert_one(audit_log.model_dump())
 
+# ==================== MULTI-TENANT MIDDLEWARE ====================
+
+async def get_current_organization(current_user: User = Depends(get_current_user)):
+    """Get current user's organization for multi-tenant isolation"""
+    org = await db.organizations.find_one({"id": current_user.organization_id}, {"_id": 0})
+    if not org or not org.get("is_active"):
+        raise HTTPException(status_code=403, detail="Organization not found or inactive")
+    return Organization(**org)
+
+def require_org_admin(current_user: User = Depends(get_current_user)):
+    """Require organization admin role"""
+    if current_user.role not in ["super_admin", "admin"]:
+        raise HTTPException(status_code=403, detail="Organization admin access required")
+    return current_user
+
 # ==================== AUTH ENDPOINTS ====================
 
 @api_router.post("/auth/register", response_model=User, status_code=201)
