@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Building2, Database, Users, Shield, Plus, TestTube, Sync, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Building2, Database, Users, Shield, Plus, TestTube2, RefreshCw, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
