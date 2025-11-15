@@ -688,6 +688,148 @@ class WorkflowEngine:
 # Global workflow engine instance
 workflow_engine = None
 
+# ==================== ORGANIZATION MANAGEMENT ENDPOINTS ====================
+
+@api_router.post("/organizations", status_code=201)
+async def create_organization(org_data: OrganizationCreate):
+    """Create new organization (Super admin only)"""
+    global organization_service
+    if not organization_service:
+        organization_service = OrganizationService(db)
+    
+    result = await organization_service.create_organization(org_data)
+    return result
+
+@api_router.get("/organizations")
+async def get_organizations(current_user: User = Depends(require_role(["super_admin"]))):
+    """Get all organizations (Platform super admin only)"""
+    orgs = await db.organizations.find({}, {"_id": 0}).to_list(100)
+    return {"organizations": orgs}
+
+@api_router.get("/organizations/current")
+async def get_current_organization(current_org: Organization = Depends(get_current_organization)):
+    """Get current user's organization"""
+    return current_org
+
+# ==================== DATABASE INTEGRATION ENDPOINTS ====================
+
+@api_router.post("/organizations/database-connections", status_code=201)
+async def create_database_connection(
+    conn_data: DatabaseConnectionCreate,
+    current_user: User = Depends(require_org_admin),
+    current_org: Organization = Depends(get_current_organization)
+):
+    """Create database connection for organization"""
+    global connector_service
+    if not connector_service:
+        connector_service = DatabaseConnectorService(db)
+    
+    # Test connection first
+    test_result = await connector_service.test_connection(conn_data.model_dump())
+    if test_result["status"] != "success":
+        raise HTTPException(status_code=400, detail=f"Connection test failed: {test_result['message']}")
+    
+    # Encrypt password and store connection
+    connection = DatabaseConnection(
+        **conn_data.model_dump(exclude={"password"}),
+        organization_id=current_org.id,
+        password_encrypted=connector_service.encrypt_password(conn_data.password)
+    )
+    
+    await db.database_connections.insert_one(connection.model_dump())
+    await log_audit(current_user.id, "database.connection.create", "database_connection", connection.id)
+    
+    return connection
+
+@api_router.get("/organizations/database-connections")
+async def get_database_connections(
+    current_user: User = Depends(require_org_admin),
+    current_org: Organization = Depends(get_current_organization)
+):
+    """Get organization's database connections"""
+    connections = await db.database_connections.find(
+        {"organization_id": current_org.id},
+        {"_id": 0, "password_encrypted": 0}  # Don't return encrypted password
+    ).to_list(100)
+    return {"connections": connections}
+
+@api_router.post("/organizations/database-connections/{connection_id}/test")
+async def test_database_connection(
+    connection_id: str,
+    current_user: User = Depends(require_org_admin),
+    current_org: Organization = Depends(get_current_organization)
+):
+    """Test database connection"""
+    global connector_service
+    if not connector_service:
+        connector_service = DatabaseConnectorService(db)
+    
+    # Get connection
+    conn_doc = await db.database_connections.find_one({
+        "id": connection_id, 
+        "organization_id": current_org.id
+    })
+    if not conn_doc:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    
+    # Decrypt password for testing
+    config = dict(conn_doc)
+    config["password"] = connector_service.decrypt_password(conn_doc["password_encrypted"])
+    
+    result = await connector_service.test_connection(config)
+    return result
+
+@api_router.post("/organizations/database-connections/{connection_id}/sync-users")
+async def sync_users_from_database(
+    connection_id: str,
+    current_user: User = Depends(require_org_admin),
+    current_org: Organization = Depends(get_current_organization)
+):
+    """Sync users from external database"""
+    global connector_service
+    if not connector_service:
+        connector_service = DatabaseConnectorService(db)
+    
+    result = await connector_service.sync_users_from_external_db(current_org.id, connection_id)
+    await log_audit(current_user.id, "database.sync.users", "database_connection", connection_id)
+    
+    return result
+
+# ==================== SSO INTEGRATION ENDPOINTS ====================
+
+@api_router.post("/organizations/sso-config", status_code=201)
+async def create_sso_config(
+    provider: str,
+    provider_name: str,
+    config: Dict[str, Any],
+    current_user: User = Depends(require_org_admin),
+    current_org: Organization = Depends(get_current_organization)
+):
+    """Configure SSO for organization"""
+    sso_config = SSOConfig(
+        organization_id=current_org.id,
+        provider=provider,
+        provider_name=provider_name,
+        config=config
+    )
+    
+    await db.sso_configs.insert_one(sso_config.model_dump())
+    await log_audit(current_user.id, "sso.config.create", "sso_config", sso_config.id)
+    
+    return sso_config
+
+@api_router.get("/organizations/sso-config")
+async def get_sso_configs(
+    current_user: User = Depends(require_org_admin),
+    current_org: Organization = Depends(get_current_organization)
+):
+    """Get organization's SSO configurations"""
+    configs = await db.sso_configs.find(
+        {"organization_id": current_org.id},
+        {"_id": 0}
+    ).to_list(100)
+    return {"sso_configs": configs}
+
 # ==================== AUTHENTICATION ====================
 
 def hash_password(password: str) -> str:
