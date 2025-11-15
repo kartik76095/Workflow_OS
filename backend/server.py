@@ -243,6 +243,224 @@ class AuditLog(BaseModel):
     ip_address: Optional[str] = None
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+# ==================== ENTERPRISE INTEGRATION SERVICES ====================
+
+import sqlalchemy
+from sqlalchemy import create_engine, text
+import pyodbc
+from cryptography.fernet import Fernet
+import base64
+
+class DatabaseConnectorService:
+    def __init__(self, db):
+        self.db = db
+        self.encryption_key = os.environ.get('ENCRYPTION_KEY', 'dummy_key_for_dev').encode()
+        if len(self.encryption_key) < 32:
+            self.encryption_key = self.encryption_key.ljust(32, b'0')
+        self.cipher_suite = Fernet(base64.urlsafe_b64encode(self.encryption_key))
+    
+    def encrypt_password(self, password: str) -> str:
+        """Encrypt database password"""
+        return self.cipher_suite.encrypt(password.encode()).decode()
+    
+    def decrypt_password(self, encrypted_password: str) -> str:
+        """Decrypt database password"""
+        return self.cipher_suite.decrypt(encrypted_password.encode()).decode()
+    
+    async def test_connection(self, connection_config: Dict) -> Dict:
+        """Test database connection"""
+        try:
+            connection_string = self._build_connection_string(connection_config)
+            engine = create_engine(connection_string, connect_args={"timeout": 10})
+            
+            with engine.connect() as conn:
+                # Test basic query
+                result = conn.execute(text("SELECT 1 as test"))
+                row = result.fetchone()
+                
+            return {
+                "status": "success",
+                "message": "Connection successful",
+                "test_result": row[0] if row else None
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Connection failed: {str(e)}"
+            }
+    
+    def _build_connection_string(self, config: Dict) -> str:
+        """Build SQLAlchemy connection string"""
+        conn_type = config["connection_type"]
+        host = config["host"]
+        port = config["port"]
+        database = config["database"]
+        username = config["username"]
+        password = config["password"]
+        ssl_enabled = config.get("ssl_enabled", False)
+        
+        if conn_type == "postgresql":
+            ssl_mode = "require" if ssl_enabled else "disable"
+            return f"postgresql://{username}:{password}@{host}:{port}/{database}?sslmode={ssl_mode}"
+        elif conn_type == "mysql":
+            ssl_param = "?ssl=true" if ssl_enabled else ""
+            return f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}{ssl_param}"
+        elif conn_type == "sql_server":
+            driver = "ODBC+Driver+17+for+SQL+Server"
+            ssl_param = "Encrypt=yes;TrustServerCertificate=no;" if ssl_enabled else ""
+            return f"mssql+pyodbc://{username}:{password}@{host}:{port}/{database}?driver={driver}&{ssl_param}"
+        else:
+            raise ValueError(f"Unsupported connection type: {conn_type}")
+    
+    async def sync_users_from_external_db(self, org_id: str, connection_id: str) -> Dict:
+        """Sync users from external database"""
+        try:
+            # Get connection config
+            conn_doc = await self.db.database_connections.find_one({"id": connection_id, "organization_id": org_id})
+            if not conn_doc:
+                return {"status": "error", "message": "Connection not found"}
+            
+            # Decrypt password
+            config = dict(conn_doc)
+            config["password"] = self.decrypt_password(conn_doc["password_encrypted"])
+            
+            # Connect to external database
+            connection_string = self._build_connection_string(config)
+            engine = create_engine(connection_string)
+            
+            # Default user sync query (customizable per organization)
+            user_query = """
+            SELECT 
+                id as external_id,
+                email,
+                full_name,
+                department,
+                is_active
+            FROM users 
+            WHERE is_active = 1
+            """
+            
+            synced_count = 0
+            with engine.connect() as conn:
+                result = conn.execute(text(user_query))
+                
+                for row in result:
+                    # Check if user already exists
+                    existing_user = await self.db.users.find_one({
+                        "organization_id": org_id,
+                        "external_id": row.external_id
+                    })
+                    
+                    if not existing_user:
+                        # Create new user
+                        user = User(
+                            email=row.email,
+                            full_name=row.full_name,
+                            organization_id=org_id,
+                            external_id=str(row.external_id),
+                            role="user",
+                            is_active=row.is_active
+                        )
+                        await self.db.users.insert_one(user.model_dump())
+                        synced_count += 1
+                    else:
+                        # Update existing user
+                        await self.db.users.update_one(
+                            {"id": existing_user["id"]},
+                            {"$set": {
+                                "full_name": row.full_name,
+                                "is_active": row.is_active,
+                                "updated_at": datetime.now(timezone.utc).isoformat()
+                            }}
+                        )
+            
+            # Update sync status
+            await self.db.database_connections.update_one(
+                {"id": connection_id},
+                {"$set": {
+                    "last_sync": datetime.now(timezone.utc).isoformat(),
+                    "sync_status": "success"
+                }}
+            )
+            
+            return {
+                "status": "success",
+                "message": f"Successfully synced {synced_count} users",
+                "synced_count": synced_count
+            }
+            
+        except Exception as e:
+            # Update sync status to error
+            await self.db.database_connections.update_one(
+                {"id": connection_id},
+                {"$set": {
+                    "sync_status": "error",
+                    "last_sync": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+            
+            return {
+                "status": "error",
+                "message": f"Sync failed: {str(e)}"
+            }
+
+class OrganizationService:
+    def __init__(self, db):
+        self.db = db
+    
+    async def create_organization(self, org_data: OrganizationCreate) -> Dict:
+        """Create new organization with admin user"""
+        try:
+            # Check if subdomain is available
+            existing = await self.db.organizations.find_one({"subdomain": org_data.subdomain})
+            if existing:
+                raise HTTPException(status_code=409, detail="Subdomain already taken")
+            
+            # Create organization
+            org = Organization(
+                name=org_data.name,
+                subdomain=org_data.subdomain
+            )
+            await self.db.organizations.insert_one(org.model_dump())
+            
+            # Create admin user for organization
+            admin_user = User(
+                email=org_data.admin_email,
+                full_name=org_data.admin_name,
+                role="super_admin",
+                organization_id=org.id
+            )
+            
+            admin_doc = admin_user.model_dump()
+            admin_doc["password_hash"] = hash_password(org_data.admin_password)
+            await self.db.users.insert_one(admin_doc)
+            
+            return {
+                "organization": org,
+                "admin_user": admin_user
+            }
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+# Global services
+connector_service = None
+organization_service = None
+
+# ==================== MULTI-TENANT MIDDLEWARE ====================
+
+async def get_current_organization(request, current_user: User = Depends(get_current_user)):
+    """Get current user's organization for multi-tenant isolation"""
+    org = await db.organizations.find_one({"id": current_user.organization_id}, {"_id": 0})
+    if not org or not org.get("is_active"):
+        raise HTTPException(status_code=403, detail="Organization not found or inactive")
+    return Organization(**org)
+
+def require_org_admin(current_user: User = Depends(get_current_user)):
+    """Require organization admin role"""
+    if current_user.role not in ["super_admin", "admin"]:
+        raise HTTPException(status_code=403, detail="Organization admin access required")
+    return current_user
+
 # ==================== WORKFLOW ENGINE ====================
 
 class WorkflowEngine:
