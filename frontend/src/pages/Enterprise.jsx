@@ -311,7 +311,7 @@ export default function Enterprise({ user }) {
                       variant="outline"
                       onClick={() => testConnection(conn.id)}
                     >
-                      <TestTube className="w-4 h-4 mr-1" />
+                      <TestTube2 className="w-4 h-4 mr-1" />
                       Test
                     </Button>
                     {conn.sync_users && (
