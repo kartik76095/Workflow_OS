@@ -22,7 +22,10 @@ export default function Layout({ children, user, setUser }) {
   ];
 
   if (user?.role === 'admin' || user?.role === 'super_admin') {
-    navigation.push({ name: 'Users', href: '/users', icon: Users });
+    navigation.push(
+      { name: 'Users', href: '/users', icon: Users },
+      { name: 'Enterprise', href: '/enterprise', icon: Building2 }
+    );
   }
 
   return (
