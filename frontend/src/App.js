@@ -66,6 +66,7 @@ function App() {
         <Route path="/analytics" element={<ProtectedRoute><Layout user={user} setUser={setUser}><Analytics /></Layout></ProtectedRoute>} />
         <Route path="/users" element={<ProtectedRoute><Layout user={user} setUser={setUser}><Users user={user} /></Layout></ProtectedRoute>} />
         <Route path="/ai" element={<ProtectedRoute><Layout user={user} setUser={setUser}><AIAssistant /></Layout></ProtectedRoute>} />
+        <Route path="/enterprise" element={<ProtectedRoute><Layout user={user} setUser={setUser}><Enterprise user={user} /></Layout></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   );
