@@ -45,10 +45,12 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     full_name: str
+    organization_id: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+    organization_subdomain: Optional[str] = None
 
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -57,10 +59,77 @@ class User(BaseModel):
     full_name: str
     role: str = "user"
     is_active: bool = True
+    organization_id: str
+    external_id: Optional[str] = None  # For syncing with external systems
     avatar_url: Optional[str] = None
     preferences: Dict[str, Any] = Field(default_factory=lambda: {"theme": "light", "default_view": "kanban"})
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+# Organization Models
+class OrganizationCreate(BaseModel):
+    name: str
+    subdomain: str
+    admin_email: EmailStr
+    admin_name: str
+    admin_password: str
+
+class Organization(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    subdomain: str  # For organization-specific URLs
+    is_active: bool = True
+    settings: Dict[str, Any] = Field(default_factory=lambda: {
+        "sso_enabled": False,
+        "external_sync_enabled": False,
+        "max_users": 100
+    })
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+# Database Connection Models
+class DatabaseConnectionCreate(BaseModel):
+    name: str
+    connection_type: str  # "sql_server", "postgresql", "mysql"
+    host: str
+    port: int
+    database: str
+    username: str
+    password: str
+    ssl_enabled: bool = False
+    sync_users: bool = False
+    sync_workflows: bool = False
+
+class DatabaseConnection(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    organization_id: str
+    name: str
+    connection_type: str
+    host: str
+    port: int
+    database: str
+    username: str
+    password_encrypted: str
+    ssl_enabled: bool = False
+    sync_users: bool = False
+    sync_workflows: bool = False
+    is_active: bool = True
+    last_sync: Optional[str] = None
+    sync_status: str = "never_synced"  # "never_synced", "syncing", "success", "error"
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+# SSO Integration Models
+class SSOConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    organization_id: str
+    provider: str  # "saml", "oauth", "active_directory"
+    provider_name: str  # Display name
+    config: Dict[str, Any]  # Provider-specific configuration
+    is_active: bool = True
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 # Task Models
 class TaskCreate(BaseModel):
