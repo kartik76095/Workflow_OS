@@ -161,7 +161,9 @@ class Task(BaseModel):
     priority: str = "medium"
     assignee_id: Optional[str] = None
     creator_id: str
+    organization_id: str  # Multi-tenant isolation
     workflow_id: Optional[str] = None
+    external_id: Optional[str] = None  # For syncing with external systems
     due_date: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
