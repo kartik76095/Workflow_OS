@@ -695,6 +695,16 @@ async def get_current_organization_temp():
         "is_active": True
     }
 
+@api_router.get("/organizations/database-connections")
+async def get_database_connections_temp():
+    """Get database connections (temporary empty endpoint)"""
+    return {"connections": []}
+
+@api_router.get("/organizations/sso-config")
+async def get_sso_configs_temp():
+    """Get SSO configs (temporary empty endpoint)"""
+    return {"sso_configs": []}
+
 # ==================== AUTHENTICATION ====================
 
 def hash_password(password: str) -> str:
