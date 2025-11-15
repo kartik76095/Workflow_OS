@@ -201,8 +201,10 @@ class Workflow(BaseModel):
     name: str
     description: Optional[str] = None
     creator_id: str
+    organization_id: str  # Multi-tenant isolation
     is_active: bool = True
     is_template: bool = False
+    external_id: Optional[str] = None  # For syncing with external systems
     nodes: List[Dict[str, Any]] = Field(default_factory=list)
     edges: List[Dict[str, Any]] = Field(default_factory=list)
     rules: List[Dict[str, Any]] = Field(default_factory=list)
