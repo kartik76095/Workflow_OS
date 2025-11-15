@@ -247,7 +247,13 @@ class AuditLog(BaseModel):
 
 import sqlalchemy
 from sqlalchemy import create_engine, text
-import pyodbc
+try:
+    import pyodbc
+    HAS_PYODBC = True
+except ImportError:
+    HAS_PYODBC = False
+    logger.warning("pyodbc not available - SQL Server connections disabled")
+
 from cryptography.fernet import Fernet
 import base64
 
