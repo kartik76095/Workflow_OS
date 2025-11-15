@@ -59,7 +59,7 @@ class User(BaseModel):
     full_name: str
     role: str = "user"
     is_active: bool = True
-    organization_id: str
+    organization_id: Optional[str] = None  # Make optional for backward compatibility
     external_id: Optional[str] = None  # For syncing with external systems
     avatar_url: Optional[str] = None
     preferences: Dict[str, Any] = Field(default_factory=lambda: {"theme": "light", "default_view": "kanban"})
