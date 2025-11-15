@@ -312,6 +312,8 @@ class DatabaseConnectorService:
             ssl_param = "?ssl=true" if ssl_enabled else ""
             return f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}{ssl_param}"
         elif conn_type == "sql_server":
+            if not HAS_PYODBC:
+                raise ValueError("SQL Server connections not available - pyodbc driver not installed")
             driver = "ODBC+Driver+17+for+SQL+Server"
             ssl_param = "Encrypt=yes;TrustServerCertificate=no;" if ssl_enabled else ""
             return f"mssql+pyodbc://{username}:{password}@{host}:{port}/{database}?driver={driver}&{ssl_param}"
