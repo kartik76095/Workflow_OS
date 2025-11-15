@@ -1615,7 +1615,7 @@ async def shutdown_db_client():
 
 @app.on_event("startup")
 async def seed_database():
-    """Seed default roles and super admin on first startup"""
+    """Seed default organization, roles and super admin on first startup"""
     try:
         # Check if already seeded
         existing_admin = await db.users.find_one({"email": "admin@katalusis.com"})
@@ -1623,11 +1623,20 @@ async def seed_database():
             logger.info("Database already seeded")
             return
         
+        # Create default organization
+        default_org = Organization(
+            name="Katalusis Demo Organization",
+            subdomain="demo"
+        )
+        await db.organizations.insert_one(default_org.model_dump())
+        logger.info("✅ Default organization created")
+        
         # Create super admin
         admin = User(
             email="admin@katalusis.com",
             full_name="Super Admin",
-            role="super_admin"
+            role="super_admin",
+            organization_id=default_org.id
         )
         
         admin_doc = admin.model_dump()
@@ -1641,6 +1650,7 @@ async def seed_database():
             name="Invoice Approval Workflow",
             description="Standard 3-step invoice approval process",
             creator_id=admin.id,
+            organization_id=default_org.id,
             is_template=True,
             nodes=[
                 {"id": "node-1", "type": "task", "label": "Submit Invoice", "position": {"x": 100, "y": 100}, "data": {}},
@@ -1658,4 +1668,5 @@ async def seed_database():
         logger.info("✅ Sample workflow template created")
         
     except Exception as e:
+        logger.error(f"Database seeding error: {str(e)}")
         logger.error(f"Database seeding error: {str(e)}")
