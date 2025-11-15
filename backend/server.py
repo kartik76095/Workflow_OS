@@ -161,7 +161,7 @@ class Task(BaseModel):
     priority: str = "medium"
     assignee_id: Optional[str] = None
     creator_id: str
-    organization_id: str  # Multi-tenant isolation
+    organization_id: Optional[str] = None  # Multi-tenant isolation (optional for backward compatibility)
     workflow_id: Optional[str] = None
     external_id: Optional[str] = None  # For syncing with external systems
     due_date: Optional[str] = None
@@ -201,7 +201,7 @@ class Workflow(BaseModel):
     name: str
     description: Optional[str] = None
     creator_id: str
-    organization_id: str  # Multi-tenant isolation
+    organization_id: Optional[str] = None  # Multi-tenant isolation (optional for backward compatibility)
     is_active: bool = True
     is_template: bool = False
     external_id: Optional[str] = None  # For syncing with external systems
