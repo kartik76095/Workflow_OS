@@ -448,7 +448,7 @@ organization_service = None
 
 # ==================== MULTI-TENANT MIDDLEWARE ====================
 
-async def get_current_organization(request, current_user: User = Depends(get_current_user)):
+async def get_current_organization(current_user: User = Depends(get_current_user)):
     """Get current user's organization for multi-tenant isolation"""
     org = await db.organizations.find_one({"id": current_user.organization_id}, {"_id": 0})
     if not org or not org.get("is_active"):
