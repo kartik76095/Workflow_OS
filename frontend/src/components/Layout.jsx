@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ListTodo, Workflow, BarChart3, Users, Sparkles, Upload, LogOut } from 'lucide-react';
+import { LayoutDashboard, ListTodo, Workflow, BarChart3, Users, Sparkles, Upload, LogOut, Building2 } from 'lucide-react';
 import { Button } from './ui/button';
 
 export default function Layout({ children, user, setUser }) {
