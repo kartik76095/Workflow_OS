@@ -320,7 +320,7 @@ export default function Enterprise({ user }) {
                         onClick={() => syncUsers(conn.id)}
                         style={{ backgroundColor: '#48bb78' }}
                       >
-                        <Sync className="w-4 h-4 mr-1" />
+                        <RefreshCw className="w-4 h-4 mr-1" />
                         Sync Users
                       </Button>
                     )}
