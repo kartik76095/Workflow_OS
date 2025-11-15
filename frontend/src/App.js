@@ -13,6 +13,7 @@ import Workflows from './pages/Workflows';
 import Analytics from './pages/Analytics';
 import Users from './pages/Users';
 import AIAssistant from './pages/AIAssistant';
+import Enterprise from './pages/Enterprise';
 import Layout from './components/Layout';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
