@@ -59,9 +59,14 @@ COPY --from=frontend-builder /app/frontend/build ./backend/static/
 # Create necessary directories
 RUN mkdir -p /app/logs
 
+# Copy entrypoint script
+COPY docker-entrypoint.sh /app/
+RUN chmod +x /app/docker-entrypoint.sh
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
+ENV WORKERS=4
 
 # Expose port
 EXPOSE 8000
@@ -70,6 +75,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/api/health || exit 1
 
-# Run the application
+# Set working directory
 WORKDIR /app/backend
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+
+# Run the application via entrypoint script
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
