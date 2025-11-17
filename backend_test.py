@@ -361,7 +361,7 @@ class BackendTester:
         print(f"📊 TEST SUMMARY: {passed}/{total} tests passed")
         
         # Critical success indicators
-        critical_tests = ["User Login (CRITICAL)", "Get Current User", "Get Tasks"]
+        critical_tests = ["User Login", "Get Current User", "Get Tasks"]
         critical_passed = sum(1 for result in self.results 
                             if any(critical in result["test"] for critical in critical_tests) 
                             and result["success"])
