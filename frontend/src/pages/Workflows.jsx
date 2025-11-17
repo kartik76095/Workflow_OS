@@ -235,7 +235,7 @@ export default function Workflows() {
         </div>
       )}
 
-      {/* Workflow Viewer Dialog */}
+      {/* Workflow Viewer Dialog with Tabs */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -246,66 +246,199 @@ export default function Workflows() {
           </DialogHeader>
           
           {selectedWorkflow && (
-            <div className="space-y-6 mt-4">
-              {/* Description */}
-              <div>
-                <h4 className="text-sm font-medium text-[#718096] mb-2">Description</h4>
-                <p className="text-[#1a202c]">{selectedWorkflow.description || 'No description provided'}</p>
-              </div>
+            <Tabs defaultValue="overview" className="mt-4">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="triggers">
+                  <Webhook className="w-4 h-4 mr-2" />
+                  Triggers
+                </TabsTrigger>
+                <TabsTrigger value="config">
+                  <Settings className="w-4 h-4 mr-2" />
+                  Config
+                </TabsTrigger>
+              </TabsList>
 
-              {/* Workflow Nodes */}
-              <div>
-                <h4 className="text-sm font-medium text-[#718096] mb-3">Workflow Steps</h4>
-                <div className="space-y-3">
-                  {selectedWorkflow.nodes && selectedWorkflow.nodes.length > 0 ? (
-                    selectedWorkflow.nodes.map((node, idx) => (
-                      <div
-                        key={node.id}
-                        className="flex items-start p-4 bg-[#eff2f5] rounded-lg border-l-4"
-                        style={{
-                          borderLeftColor: 
-                            node.type === 'task' ? '#0a69a7' :
-                            node.type === 'approval' ? '#48bb78' :
-                            node.type === 'condition' ? '#ed8936' :
-                            '#718096'
-                        }}
-                      >
-                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-white flex items-center justify-center font-semibold text-sm mr-3">
-                          {idx + 1}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center mb-1">
-                            <h5 className="font-semibold text-[#1a202c]">{node.label}</h5>
-                            <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded capitalize"
-                              style={{
-                                backgroundColor: 
-                                  node.type === 'task' ? '#bee3f8' :
-                                  node.type === 'approval' ? '#c6f6d5' :
-                                  node.type === 'condition' ? '#feebc8' :
-                                  '#e2e8f0',
-                                color:
-                                  node.type === 'task' ? '#2c5282' :
-                                  node.type === 'approval' ? '#22543d' :
-                                  node.type === 'condition' ? '#c05621' :
-                                  '#4a5568'
-                              }}
-                            >
-                              {node.type}
-                            </span>
+              {/* Overview Tab */}
+              <TabsContent value="overview" className="space-y-6">
+                {/* Description */}
+                <div>
+                  <h4 className="text-sm font-medium text-[#718096] mb-2">Description</h4>
+                  <p className="text-[#1a202c]">{selectedWorkflow.description || 'No description provided'}</p>
+                </div>
+
+                {/* Workflow Nodes */}
+                <div>
+                  <h4 className="text-sm font-medium text-[#718096] mb-3">Workflow Steps</h4>
+                  <div className="space-y-3">
+                    {selectedWorkflow.nodes && selectedWorkflow.nodes.length > 0 ? (
+                      selectedWorkflow.nodes.map((node, idx) => (
+                        <div
+                          key={node.id}
+                          className="flex items-start p-4 bg-[#eff2f5] rounded-lg border-l-4"
+                          style={{
+                            borderLeftColor: 
+                              node.type === 'task' ? '#0a69a7' :
+                              node.type === 'approval' ? '#48bb78' :
+                              node.type === 'condition' ? '#ed8936' :
+                              node.type === 'ai_worker' ? '#9f7aea' :
+                              node.type === 'webhook_action' ? '#38b2ac' :
+                              '#718096'
+                          }}
+                        >
+                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-white flex items-center justify-center font-semibold text-sm mr-3">
+                            {idx + 1}
                           </div>
-                          {node.data && Object.keys(node.data).length > 0 && (
-                            <p className="text-sm text-[#718096]">
-                              {JSON.stringify(node.data)}
+                          <div className="flex-1">
+                            <div className="flex items-center mb-1">
+                              <h5 className="font-semibold text-[#1a202c]">{node.label}</h5>
+                              <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded capitalize"
+                                style={{
+                                  backgroundColor: 
+                                    node.type === 'task' ? '#bee3f8' :
+                                    node.type === 'approval' ? '#c6f6d5' :
+                                    node.type === 'condition' ? '#feebc8' :
+                                    node.type === 'ai_worker' ? '#e9d8fd' :
+                                    node.type === 'webhook_action' ? '#b2f5ea' :
+                                    '#e2e8f0',
+                                  color:
+                                    node.type === 'task' ? '#2c5282' :
+                                    node.type === 'approval' ? '#22543d' :
+                                    node.type === 'condition' ? '#c05621' :
+                                    node.type === 'ai_worker' ? '#553c9a' :
+                                    node.type === 'webhook_action' ? '#234e52' :
+                                    '#4a5568'
+                                }}
+                              >
+                                {node.type.replace('_', ' ')}
+                              </span>
+                            </div>
+                            {node.data && Object.keys(node.data).length > 0 && (
+                              <div className="mt-2 p-2 bg-white rounded text-xs">
+                                <pre className="text-[#718096] overflow-x-auto">
+                                  {JSON.stringify(node.data, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-[#718096] text-center py-4">No workflow steps defined</p>
+                    )}
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Triggers Tab */}
+              <TabsContent value="triggers" className="space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-blue-900 mb-2 flex items-center">
+                    <Webhook className="w-5 h-5 mr-2" />
+                    Webhook Triggers
+                  </h4>
+                  <p className="text-sm text-blue-700">
+                    Create webhook URLs that external systems can call to trigger this workflow automatically.
+                  </p>
+                </div>
+
+                {webhookTriggers.length > 0 ? (
+                  <div className="space-y-3">
+                    {webhookTriggers.map((trigger) => (
+                      <div key={trigger.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <h5 className="font-semibold text-[#1a202c] mb-1">{trigger.name}</h5>
+                            <p className="text-xs text-[#718096]">
+                              Triggered {trigger.trigger_count} times
+                              {trigger.last_triggered && ` • Last: ${new Date(trigger.last_triggered).toLocaleString()}`}
                             </p>
-                          )}
+                          </div>
+                          <span className={`px-2 py-1 text-xs rounded ${trigger.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                            {trigger.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                        
+                        <div className="bg-white p-3 rounded border border-gray-300 font-mono text-xs break-all">
+                          {BACKEND_URL}{trigger.hook_url}
+                        </div>
+                        
+                        <div className="flex items-center space-x-2 mt-3">
+                          <Button
+                            size="sm"
+                            onClick={() => copyToClipboard(`${BACKEND_URL}${trigger.hook_url}`)}
+                            className="bg-[#0a69a7]"
+                          >
+                            {copiedUrl === `${BACKEND_URL}${trigger.hook_url}` ? (
+                              <>
+                                <Check className="w-3 h-3 mr-1" />
+                                Copied!
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3 mr-1" />
+                                Copy URL
+                              </>
+                            )}
+                          </Button>
+                          <p className="text-xs text-[#718096]">
+                            Use this URL in your external systems to trigger the workflow
+                          </p>
                         </div>
                       </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-[#718096] text-center py-4">No workflow steps defined</p>
-                  )}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Webhook className="w-12 h-12 mx-auto text-[#718096] mb-3" />
+                    <h5 className="font-semibold text-[#1a202c] mb-2">No webhook triggers yet</h5>
+                    <p className="text-sm text-[#718096] mb-4">
+                      Create a webhook trigger to allow external systems to start this workflow
+                    </p>
+                    <Button
+                      onClick={() => createWebhookTrigger(selectedWorkflow.id)}
+                      disabled={creatingWebhook}
+                      className="bg-[#0a69a7]"
+                    >
+                      {creatingWebhook ? 'Creating...' : '+ Create Webhook Trigger'}
+                    </Button>
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* Config Tab */}
+              <TabsContent value="config" className="space-y-4">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-semibold text-[#1a202c] mb-2">Workflow Configuration</h4>
+                  <div className="space-y-3 text-sm">
+                    <div>
+                      <span className="font-medium text-[#718096]">Workflow ID:</span>
+                      <code className="ml-2 px-2 py-1 bg-white rounded text-xs">{selectedWorkflow.id}</code>
+                    </div>
+                    <div>
+                      <span className="font-medium text-[#718096]">Status:</span>
+                      <span className={`ml-2 px-2 py-1 text-xs rounded ${selectedWorkflow.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                        {selectedWorkflow.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-[#718096]">Created:</span>
+                      <span className="ml-2 text-[#1a202c]">
+                        {new Date(selectedWorkflow.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </TabsContent>
+            </Tabs>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Keep the rest of the Workflow Viewer Dialog content below... */}
+      <Dialog open={false}>
+        <DialogContent>
+          <div className="space-y-6 mt-4">
 
               {/* Connections */}
               {selectedWorkflow.edges && selectedWorkflow.edges.length > 0 && (
