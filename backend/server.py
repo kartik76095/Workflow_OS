@@ -1473,6 +1473,36 @@ async def shutdown_event():
     if client:
         client.close()
 
+# ==================== STATIC FILE SERVING (Production) ====================
+# Serve React frontend from static directory (for Docker deployment)
+
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import os.path
+
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    # Mount static files
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    
+    # Serve index.html for all non-API routes (SPA routing)
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve React SPA for all non-API routes"""
+        # If requesting a file that exists, serve it
+        file_path = static_dir / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        # Otherwise serve index.html (for React Router)
+        index_path = static_dir / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    logger.info("✅ Static file serving enabled - React frontend available at /")
+else:
+    logger.warning("⚠️  Static directory not found - running in development mode")
+
 logger.info("✅ Katalusis Workflow OS Enterprise API initialized successfully!")
 logger.info("✅ Circular imports resolved - using centralized dependencies")
 logger.info("✅ Enterprise features enabled: Webhooks, Resilience, Audit Logs, AI Workers, Time Machine")
