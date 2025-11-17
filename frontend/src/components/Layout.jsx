@@ -24,7 +24,8 @@ export default function Layout({ children, user, setUser }) {
   if (user?.role === 'admin' || user?.role === 'super_admin') {
     navigation.push(
       { name: 'Users', href: '/users', icon: Users },
-      { name: 'Enterprise', href: '/enterprise', icon: Building2 }
+      { name: 'Enterprise', href: '/enterprise', icon: Building2 },
+      { name: 'Audit Logs', href: '/admin/audit-logs', icon: Shield }
     );
   }
 
