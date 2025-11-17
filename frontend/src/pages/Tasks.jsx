@@ -149,6 +149,28 @@ export default function Tasks({ user }) {
     }
   };
 
+  const rewindWorkflow = async (taskId, targetStepId, reason) => {
+    const token = localStorage.getItem('token');
+    try {
+      const params = new URLSearchParams({ target_step_id: targetStepId, reason });
+      await axios.post(
+        `${API}/tasks/${taskId}/workflow/rewind?${params.toString()}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('⏪ Workflow rewound successfully!');
+      setHistoryDialogOpen(false);
+      fetchTasks();
+    } catch (error) {
+      toast.error('Failed to rewind workflow: ' + (error.response?.data?.detail || 'Unknown error'));
+    }
+  };
+
+  const openHistoryDialog = (task) => {
+    setSelectedTaskForHistory(task);
+    setHistoryDialogOpen(true);
+  };
+
   const filteredTasks = tasks.filter((task) =>
     task.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
