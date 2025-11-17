@@ -212,10 +212,7 @@ export default function Workflows() {
             <Card
               key={workflow.id}
               data-testid={`workflow-${workflow.id}`}
-              onClick={() => {
-                setSelectedWorkflow(workflow);
-                setViewDialogOpen(true);
-              }}
+              onClick={() => openWorkflowDialog(workflow)}
               className="p-6 bg-white border border-[#e2e8f0] hover:shadow-lg transition-shadow cursor-pointer"
             >
               <div className="flex items-start justify-between mb-4">
