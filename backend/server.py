@@ -814,6 +814,16 @@ async def get_tasks(
     
     # Enrich with assignee info
     for task in tasks:
+        if task.get("assignee_id"):
+            assignee = await db.users.find_one({"id": task["assignee_id"]}, {"_id": 0, "id": 1, "full_name": 1, "avatar_url": 1})
+            task["assignee"] = assignee
+    
+    return {
+        "tasks": tasks,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
 
 # ==================== TASK IMPORT ENDPOINTS (CRITICAL MVP) ====================
 
