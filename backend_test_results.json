@@ -3,10 +3,10 @@
     "test": "Health Check",
     "success": true,
     "details": "Backend is healthy, version: 2.0.0",
-    "timestamp": "2025-11-17T14:24:05.849408",
+    "timestamp": "2025-11-17T14:24:22.793226",
     "response_data": {
       "status": "healthy",
-      "timestamp": "2025-11-17T14:24:05.844840+00:00",
+      "timestamp": "2025-11-17T14:24:22.785198+00:00",
       "version": "2.0.0"
     }
   },
@@ -14,14 +14,14 @@
     "test": "User Registration",
     "success": true,
     "details": "User already exists (acceptable for testing)",
-    "timestamp": "2025-11-17T14:24:05.905300",
+    "timestamp": "2025-11-17T14:24:22.875280",
     "response_data": null
   },
   {
     "test": "User Login",
     "success": true,
     "details": "Login successful, token received, user ID: ccc88d45-09fd-475c-8bf9-dd8c2da2a55e",
-    "timestamp": "2025-11-17T14:24:06.147760",
+    "timestamp": "2025-11-17T14:24:23.116894",
     "response_data": {
       "token_type": "bearer",
       "user_email": "test@katalusis.com",
@@ -32,7 +32,7 @@
     "test": "Get Current User",
     "success": true,
     "details": "Current user retrieved successfully: Test User",
-    "timestamp": "2025-11-17T14:24:06.159837",
+    "timestamp": "2025-11-17T14:24:23.167993",
     "response_data": {
       "user_id": "ccc88d45-09fd-475c-8bf9-dd8c2da2a55e",
       "email": "test@katalusis.com",
@@ -42,20 +42,20 @@
   {
     "test": "Get Tasks",
     "success": true,
-    "details": "Tasks retrieved successfully, count: 0",
-    "timestamp": "2025-11-17T14:24:06.170813",
+    "details": "Tasks retrieved successfully, count: 1",
+    "timestamp": "2025-11-17T14:24:23.221930",
     "response_data": {
-      "total": 0,
-      "task_count": 0
+      "total": 1,
+      "task_count": 1
     }
   },
   {
     "test": "Create Task",
     "success": true,
-    "details": "Task created successfully with ID: 66922b85-20c1-4560-92c2-bb1d148c1bd5",
-    "timestamp": "2025-11-17T14:24:06.229247",
+    "details": "Task created successfully with ID: a17ccb18-ac30-4f1a-a84e-32879942fe86",
+    "timestamp": "2025-11-17T14:24:23.237311",
     "response_data": {
-      "task_id": "66922b85-20c1-4560-92c2-bb1d148c1bd5",
+      "task_id": "a17ccb18-ac30-4f1a-a84e-32879942fe86",
       "title": "Test Task - Backend API Validation",
       "status": "new",
       "priority": "high"
@@ -65,21 +65,21 @@
     "test": "Get Audit Logs",
     "success": true,
     "details": "Access denied (expected for non-admin user) - RBAC working correctly",
-    "timestamp": "2025-11-17T14:24:06.239357",
+    "timestamp": "2025-11-17T14:24:23.246811",
     "response_data": null
   },
   {
     "test": "Get Workflows",
     "success": true,
     "details": "Workflows retrieved, count: 2",
-    "timestamp": "2025-11-17T14:24:06.261111",
+    "timestamp": "2025-11-17T14:24:23.309635",
     "response_data": null
   },
   {
     "test": "Get Analytics",
     "success": true,
-    "details": "Analytics retrieved, total tasks: 1",
-    "timestamp": "2025-11-17T14:24:06.261141",
+    "details": "Analytics retrieved, total tasks: 2",
+    "timestamp": "2025-11-17T14:24:23.309662",
     "response_data": null
   }
 ]
