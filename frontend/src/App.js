@@ -68,6 +68,7 @@ function App() {
         <Route path="/users" element={<ProtectedRoute><Layout user={user} setUser={setUser}><Users user={user} /></Layout></ProtectedRoute>} />
         <Route path="/ai" element={<ProtectedRoute><Layout user={user} setUser={setUser}><AIAssistant /></Layout></ProtectedRoute>} />
         <Route path="/enterprise" element={<ProtectedRoute><Layout user={user} setUser={setUser}><Enterprise user={user} /></Layout></ProtectedRoute>} />
+        <Route path="/admin/audit-logs" element={<ProtectedRoute><Layout user={user} setUser={setUser}><AuditLogs user={user} /></Layout></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   );
