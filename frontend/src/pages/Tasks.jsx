@@ -476,6 +476,113 @@ export default function Tasks({ user }) {
           </div>
         ))}
       </div>
+
+      {/* Time Machine - Workflow History Dialog */}
+      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <History className="w-5 h-5 mr-2 text-[#0a69a7]" />
+              Workflow History - Time Machine
+            </DialogTitle>
+          </DialogHeader>
+          {selectedTaskForHistory && (
+            <div className="space-y-4 mt-4">
+              <div className="bg-[#eff2f5] p-4 rounded-lg">
+                <h3 className="font-semibold text-[#1a202c] mb-2">{selectedTaskForHistory.title}</h3>
+                <p className="text-sm text-[#718096]">
+                  Current Step: {selectedTaskForHistory.workflow_state?.current_step || 'Not started'}
+                </p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start space-x-3">
+                <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-semibold text-amber-900">Time Machine Feature</p>
+                  <p className="text-amber-700 mt-1">
+                    You can rewind this workflow to any previous step. This action will be logged in the audit trail.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="font-semibold text-[#1a202c]">Step History</h4>
+                {selectedTaskForHistory.workflow_state?.step_history?.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedTaskForHistory.workflow_state.step_history.map((step, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-4 rounded-lg border ${
+                          step.step_id === selectedTaskForHistory.workflow_state.current_step
+                            ? 'bg-blue-50 border-blue-300'
+                            : step.status === 'completed' || step.status === 'approve'
+                            ? 'bg-green-50 border-green-200'
+                            : step.status === 'reject'
+                            ? 'bg-red-50 border-red-200'
+                            : 'bg-gray-50 border-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2">
+                              <span className="font-medium text-[#1a202c]">{step.step_name}</span>
+                              <span
+                                className={`px-2 py-1 text-xs font-semibold rounded ${
+                                  step.status === 'completed' || step.status === 'approve'
+                                    ? 'bg-green-100 text-green-700'
+                                    : step.status === 'reject'
+                                    ? 'bg-red-100 text-red-700'
+                                    : step.status === 'rewound'
+                                    ? 'bg-purple-100 text-purple-700'
+                                    : 'bg-blue-100 text-blue-700'
+                                }`}
+                              >
+                                {step.status}
+                              </span>
+                              {step.step_id === selectedTaskForHistory.workflow_state.current_step && (
+                                <span className="px-2 py-1 text-xs bg-blue-500 text-white rounded font-semibold">
+                                  CURRENT
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-2 text-sm text-[#718096] space-y-1">
+                              {step.started_at && (
+                                <p>Started: {new Date(step.started_at).toLocaleString()}</p>
+                              )}
+                              {step.completed_at && (
+                                <p>Completed: {new Date(step.completed_at).toLocaleString()}</p>
+                              )}
+                              {step.comment && <p className="italic">"{step.comment}"</p>}
+                              {step.reason && <p className="italic text-purple-600">Rewind reason: "{step.reason}"</p>}
+                            </div>
+                          </div>
+                          {step.status !== 'started' && step.step_id !== selectedTaskForHistory.workflow_state.current_step && (
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                const reason = prompt('Enter a reason for rewinding to this step:');
+                                if (reason) {
+                                  rewindWorkflow(selectedTaskForHistory.id, step.step_id, reason);
+                                }
+                              }}
+                              className="ml-4 bg-purple-600 hover:bg-purple-700"
+                            >
+                              <RotateCcw className="w-3 h-3 mr-1" />
+                              Rewind Here
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-[#718096] text-center py-4">No history available</p>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
