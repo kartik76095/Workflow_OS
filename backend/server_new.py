@@ -425,6 +425,191 @@ class EnterpriseWorkflowEngine:
         # Standard node execution logic (simplified for now)
         return {"success": True}
 
+    async def progress_workflow(self, task_id: str, user_id: str, comment: Optional[str] = None):
+        """Progress workflow to next step"""
+        task = await self.db.tasks.find_one({"id": task_id}, {"_id": 0})
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        workflow_state = task.get("workflow_state")
+        if not workflow_state or not workflow_state.get("current_step"):
+            raise HTTPException(status_code=400, detail="No active workflow")
+        
+        current_step_id = workflow_state["current_step"]
+        workflow = await self.db.workflows.find_one({"id": task.get("workflow_id")}, {"_id": 0})
+        
+        # Find next step
+        edges = workflow.get("edges", [])
+        next_step_id = None
+        for edge in edges:
+            if edge["source"] == current_step_id:
+                next_step_id = edge["target"]
+                break
+        
+        if not next_step_id:
+            # Workflow complete
+            await self.db.tasks.update_one(
+                {"id": task_id},
+                {"$set": {
+                    "status": "completed",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "workflow_state.current_step": None
+                }}
+            )
+            await log_audit(user_id, "WORKFLOW_COMPLETE", f"task-{task_id}", {})
+            return {"status": "completed"}
+        
+        # Find next node
+        next_node = None
+        for node in workflow.get("nodes", []):
+            if node["id"] == next_step_id:
+                next_node = node
+                break
+        
+        # Check if approval needed
+        if next_node and next_node["type"] == "approval":
+            # Add to pending approvals
+            approval = {
+                "step_id": next_node["id"],
+                "step_name": next_node["label"],
+                "assigned_to": user_id,
+                "requested_at": datetime.now(timezone.utc).isoformat()
+            }
+            
+            await self.db.tasks.update_one(
+                {"id": task_id},
+                {
+                    "$set": {"workflow_state.current_step": next_step_id},
+                    "$push": {
+                        "workflow_state.pending_approvals": approval,
+                        "workflow_state.step_history": {
+                            "step_id": next_step_id,
+                            "step_name": next_node["label"],
+                            "status": "pending_approval",
+                            "started_at": datetime.now(timezone.utc).isoformat()
+                        }
+                    }
+                }
+            )
+        else:
+            # Progress to next step
+            await self.db.tasks.update_one(
+                {"id": task_id},
+                {
+                    "$set": {"workflow_state.current_step": next_step_id},
+                    "$push": {
+                        "workflow_state.step_history": {
+                            "step_id": next_step_id,
+                            "step_name": next_node["label"] if next_node else "Unknown",
+                            "status": "started",
+                            "started_at": datetime.now(timezone.utc).isoformat(),
+                            "started_by": user_id,
+                            "comment": comment
+                        },
+                        "workflow_state.completed_steps": current_step_id
+                    }
+                }
+            )
+        
+        updated_task = await self.db.tasks.find_one({"id": task_id}, {"_id": 0})
+        await log_audit(user_id, "WORKFLOW_PROGRESS", f"task-{task_id}", {"to_step": next_step_id})
+        return updated_task.get("workflow_state")
+    
+    async def approve_step(self, task_id: str, step_id: str, user_id: str, action: str, comment: Optional[str] = None):
+        """Approve or reject workflow step"""
+        task = await self.db.tasks.find_one({"id": task_id}, {"_id": 0})
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        workflow_state = task.get("workflow_state")
+        pending_approvals = workflow_state.get("pending_approvals", [])
+        
+        # Find and remove approval
+        approval = None
+        for appr in pending_approvals:
+            if appr["step_id"] == step_id and appr["assigned_to"] == user_id:
+                approval = appr
+                break
+        
+        if not approval:
+            raise HTTPException(status_code=404, detail="Approval not found")
+        
+        # Update approval status
+        await self.db.tasks.update_one(
+            {"id": task_id},
+            {
+                "$pull": {"workflow_state.pending_approvals": {"step_id": step_id}},
+                "$push": {
+                    "workflow_state.step_history": {
+                        "step_id": step_id,
+                        "step_name": approval["step_name"],
+                        "status": action,
+                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                        "completed_by": user_id,
+                        "comment": comment
+                    }
+                }
+            }
+        )
+        
+        if action == "approve":
+            # Progress to next step
+            await self.progress_workflow(task_id, user_id, f"Approved: {comment or ''}")
+        
+        updated_task = await self.db.tasks.find_one({"id": task_id}, {"_id": 0})
+        await log_audit(user_id, "WORKFLOW_APPROVAL", f"task-{task_id}", {"action": action, "step_id": step_id})
+        return updated_task.get("workflow_state")
+    
+    async def rewind_workflow(self, task_id: str, target_step_id: str, user_id: str, reason: str):
+        """Time Machine: Rewind workflow to a previous step"""
+        task = await self.db.tasks.find_one({"id": task_id}, {"_id": 0})
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        workflow_state = task.get("workflow_state")
+        step_history = workflow_state.get("step_history", [])
+        
+        # Verify target step exists in history
+        target_step = None
+        for step in step_history:
+            if step["step_id"] == target_step_id:
+                target_step = step
+                break
+        
+        if not target_step:
+            raise HTTPException(status_code=404, detail="Target step not found in history")
+        
+        # Update workflow state to target step
+        await self.db.tasks.update_one(
+            {"id": task_id},
+            {
+                "$set": {
+                    "workflow_state.current_step": target_step_id,
+                    "status": "in_progress"
+                },
+                "$push": {
+                    "workflow_state.step_history": {
+                        "step_id": target_step_id,
+                        "step_name": target_step["step_name"],
+                        "status": "rewound",
+                        "rewound_at": datetime.now(timezone.utc).isoformat(),
+                        "rewound_by": user_id,
+                        "reason": reason
+                    }
+                }
+            }
+        )
+        
+        # Log the rewind action with immutable audit
+        await log_audit(user_id, "WORKFLOW_REWIND", f"task-{task_id}", {
+            "from_step": workflow_state.get("current_step"),
+            "to_step": target_step_id,
+            "reason": reason
+        })
+        
+        updated_task = await self.db.tasks.find_one({"id": task_id}, {"_id": 0})
+        return updated_task.get("workflow_state")
+
 # Global workflow engine instance
 workflow_engine = None
 
@@ -432,7 +617,288 @@ workflow_engine = None
 if not workflow_engine:
     workflow_engine = EnterpriseWorkflowEngine(db)
 
-# Continue with the rest of the server.py file...
-# (I'll continue with the endpoints in the next file)
+# ==================== WEBHOOK ENDPOINTS ====================
 
-print("✅ Dependencies and models loaded successfully - circular imports resolved!")
+@api_router.post("/webhooks/triggers", status_code=201)
+async def create_webhook_trigger(
+    trigger_data: WebhookTriggerCreate,
+    current_user: User = Depends(require_admin)
+):
+    """Create inbound webhook trigger"""
+    # Verify workflow exists
+    workflow = await db.workflows.find_one({"id": trigger_data.workflow_id}, {"_id": 0})
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    
+    trigger = WebhookTrigger(
+        **trigger_data.model_dump(),
+        organization_id=current_user.organization_id
+    )
+    
+    # Generate webhook URL
+    trigger.hook_url = f"/api/webhooks/incoming/{trigger.id}"
+    
+    await db.webhook_triggers.insert_one(trigger.model_dump())
+    await log_audit(current_user.id, "WEBHOOK_TRIGGER_CREATE", f"webhook-{trigger.id}", {"workflow_id": trigger_data.workflow_id})
+    
+    return trigger
+
+@api_router.get("/webhooks/triggers")
+async def list_webhook_triggers(current_user: User = Depends(require_admin)):
+    """List all webhook triggers"""
+    query = {}
+    if current_user.organization_id:
+        query["organization_id"] = current_user.organization_id
+    
+    triggers = await db.webhook_triggers.find(query, {"_id": 0}).to_list(100)
+    return {"triggers": triggers}
+
+@api_router.post("/webhooks/incoming/{trigger_id}")
+async def receive_webhook(trigger_id: str, request: Request):
+    """Receive inbound webhook and trigger workflow"""
+    trigger = await db.webhook_triggers.find_one({"id": trigger_id}, {"_id": 0})
+    if not trigger or not trigger.get("is_active"):
+        raise HTTPException(status_code=404, detail="Webhook trigger not found or inactive")
+    
+    # Get payload
+    try:
+        payload = await request.json()
+    except:
+        payload = {}
+    
+    # Map payload to workflow variables
+    workflow_variables = {}
+    payload_mapping = trigger.get("payload_mapping", {})
+    for target_var, source_field in payload_mapping.items():
+        # Support nested fields with dot notation
+        value = payload
+        for field in source_field.split('.'):
+            value = value.get(field, None)
+            if value is None:
+                break
+        if value is not None:
+            workflow_variables[target_var] = value
+    
+    # Create task and start workflow
+    task = Task(
+        title=f"Webhook-triggered: {trigger.get('name')}",
+        description=f"Triggered by webhook {trigger_id}",
+        creator_id="system",
+        organization_id=trigger.get("organization_id"),
+        workflow_id=trigger.get("workflow_id"),
+        metadata={"webhook_payload": payload}
+    )
+    
+    await db.tasks.insert_one(task.model_dump())
+    
+    # Start workflow with variables from webhook
+    await workflow_engine.start_workflow(task.id, trigger.get("workflow_id"), "system", workflow_variables)
+    
+    # Update trigger stats
+    await db.webhook_triggers.update_one(
+        {"id": trigger_id},
+        {
+            "$set": {"last_triggered": datetime.now(timezone.utc).isoformat()},
+            "$inc": {"trigger_count": 1}
+        }
+    )
+    
+    await log_audit("system", "WEBHOOK_RECEIVED", f"webhook-{trigger_id}", {"task_id": task.id})
+    
+    return {"status": "success", "task_id": task.id, "workflow_started": True}
+
+@api_router.delete("/webhooks/triggers/{trigger_id}", status_code=204)
+async def delete_webhook_trigger(trigger_id: str, current_user: User = Depends(require_admin)):
+    """Delete webhook trigger"""
+    result = await db.webhook_triggers.delete_one({"id": trigger_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Webhook trigger not found")
+    
+    await log_audit(current_user.id, "WEBHOOK_TRIGGER_DELETE", f"webhook-{trigger_id}", {})
+    return None
+
+# ==================== TIME MACHINE ENDPOINT ====================
+
+@api_router.post("/tasks/{task_id}/workflow/rewind")
+async def rewind_task_workflow(
+    task_id: str,
+    target_step_id: str,
+    reason: str,
+    current_user: User = Depends(require_admin)
+):
+    """Time Machine: Rewind workflow to a previous step (Admin only)"""
+    try:
+        workflow_state = await workflow_engine.rewind_workflow(task_id, target_step_id, current_user.id, reason)
+        return {"status": "rewound", "workflow_state": workflow_state}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# ==================== AUTH ENDPOINTS ====================
+
+@api_router.post("/auth/register", response_model=User, status_code=201)
+async def register(user_data: UserCreate):
+    # Check if user exists
+    existing = await db.users.find_one({"email": user_data.email})
+    if existing:
+        raise HTTPException(status_code=409, detail="Email already registered")
+    
+    # Create user
+    user = User(
+        email=user_data.email,
+        full_name=user_data.full_name,
+        role="user",
+        organization_id=user_data.organization_id
+    )
+    
+    user_doc = user.model_dump()
+    user_doc["password_hash"] = hash_password(user_data.password)
+    
+    await db.users.insert_one(user_doc)
+    await log_audit(user.id, "USER_REGISTER", f"user-{user.id}", {})
+    
+    return user
+
+@api_router.post("/auth/login")
+async def login(credentials: UserLogin):
+    user_doc = await db.users.find_one({"email": credentials.email}, {"_id": 0})
+    if not user_doc or not verify_password(credentials.password, user_doc.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    if not user_doc.get("is_active", True):
+        raise HTTPException(status_code=403, detail="Account is inactive")
+    
+    token = create_jwt_token(user_doc["id"], user_doc["email"], user_doc["role"])
+    
+    # Update last login
+    await db.users.update_one(
+        {"id": user_doc["id"]},
+        {"$set": {"last_login": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    user = User(**user_doc)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": user
+    }
+
+@api_router.get("/auth/me", response_model=User)
+async def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+# ==================== TASK ENDPOINTS ====================
+
+@api_router.get("/tasks")
+async def get_tasks(
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    assignee_id: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user)
+):
+    query = {}
+    if status:
+        query["status"] = status
+    if priority:
+        query["priority"] = priority
+    if assignee_id:
+        query["assignee_id"] = assignee_id
+    
+    # Regular users only see their assigned tasks or created tasks
+    if current_user.role not in ["super_admin", "admin"]:
+        query["$or"] = [{"assignee_id": current_user.id}, {"creator_id": current_user.id}]
+    
+    total = await db.tasks.count_documents(query)
+    tasks = await db.tasks.find(query, {"_id": 0}).skip(offset).limit(limit).to_list(limit)
+    
+    # Enrich with assignee info
+    for task in tasks:
+        if task.get("assignee_id"):
+            assignee = await db.users.find_one({"id": task["assignee_id"]}, {"_id": 0, "id": 1, "full_name": 1, "avatar_url": 1})
+            task["assignee"] = assignee
+    
+    return {
+        "tasks": tasks,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
+
+@api_router.post("/tasks", response_model=Task, status_code=201)
+async def create_task(task_data: TaskCreate, current_user: User = Depends(get_current_user)):
+    task = Task(**task_data.model_dump(), creator_id=current_user.id, organization_id=current_user.organization_id)
+    await db.tasks.insert_one(task.model_dump())
+    await log_audit(current_user.id, "TASK_CREATE", f"task-{task.id}", {})
+    
+    # Auto-start workflow if assigned
+    if task.workflow_id:
+        try:
+            await workflow_engine.start_workflow(task.id, task.workflow_id, current_user.id)
+        except Exception as e:
+            logger.warning(f"Failed to start workflow for task {task.id}: {str(e)}")
+    
+    return task
+
+@api_router.get("/tasks/{task_id}", response_model=Task)
+async def get_task(task_id: str, current_user: User = Depends(get_current_user)):
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Check permissions
+    if current_user.role not in ["super_admin", "admin"]:
+        if task.get("assignee_id") != current_user.id and task.get("creator_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    
+    return Task(**task)
+
+@api_router.patch("/tasks/{task_id}", response_model=Task)
+async def update_task(task_id: str, task_update: TaskUpdate, current_user: User = Depends(get_current_user)):
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    old_data = {k: task.get(k) for k in task_update.model_dump(exclude_unset=True).keys()}
+    update_data = {k: v for k, v in task_update.model_dump(exclude_unset=True).items() if v is not None}
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    if update_data.get("status") == "completed" and task.get("status") != "completed":
+        update_data["completed_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.tasks.update_one({"id": task_id}, {"$set": update_data})
+    
+    # Audit log with before/after changes
+    await log_audit(current_user.id, "TASK_UPDATE", f"task-{task_id}", {"before": old_data, "after": update_data})
+    
+    updated_task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    return Task(**updated_task)
+
+@api_router.delete("/tasks/{task_id}", status_code=204)
+async def delete_task(task_id: str, current_user: User = Depends(require_role(["admin", "super_admin"]))):
+    result = await db.tasks.delete_one({"id": task_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Task not found")
+    await log_audit(current_user.id, "TASK_DELETE", f"task-{task_id}", {})
+    return None
+
+@api_router.post("/tasks/{task_id}/comments", status_code=201)
+async def add_comment(task_id: str, comment_data: CommentCreate, current_user: User = Depends(get_current_user)):
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    comment = {
+        "id": str(uuid.uuid4()),
+        "user_id": current_user.id,
+        "user_name": current_user.full_name,
+        "text": comment_data.text,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.tasks.update_one({"id": task_id}, {"$push": {"comments": comment}})
+    await log_audit(current_user.id, "TASK_COMMENT", f"task-{task_id}", {"comment_id": comment["id"]})
+    
+    return comment
+
+# Continue in next section...
