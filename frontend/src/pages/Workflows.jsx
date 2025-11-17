@@ -78,6 +78,64 @@ export default function Workflows() {
     }
   };
 
+  const fetchWebhookTriggers = async (workflowId) => {
+    const token = localStorage.getItem('token');
+    try {
+      const res = await axios.get(`${API}/webhooks/triggers`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const filtered = res.data.triggers.filter(t => t.workflow_id === workflowId);
+      setWebhookTriggers(filtered);
+    } catch (error) {
+      console.error('Failed to fetch webhook triggers:', error);
+    }
+  };
+
+  const createWebhookTrigger = async (workflowId) => {
+    setCreatingWebhook(true);
+    const token = localStorage.getItem('token');
+    try {
+      const res = await axios.post(
+        `${API}/webhooks/triggers`,
+        {
+          name: `Webhook for ${selectedWorkflow?.name}`,
+          workflow_id: workflowId,
+          payload_mapping: {
+            data: 'data'
+          }
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('Webhook trigger created!');
+      fetchWebhookTriggers(workflowId);
+    } catch (error) {
+      if (error.response?.status === 403) {
+        toast.error('Webhook triggers require admin privileges');
+      } else {
+        toast.error('Failed to create webhook trigger');
+      }
+    } finally {
+      setCreatingWebhook(false);
+    }
+  };
+
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedUrl(text);
+      toast.success('URL copied to clipboard!');
+      setTimeout(() => setCopiedUrl(null), 2000);
+    } catch (error) {
+      toast.error('Failed to copy URL');
+    }
+  };
+
+  const openWorkflowDialog = (workflow) => {
+    setSelectedWorkflow(workflow);
+    setViewDialogOpen(true);
+    fetchWebhookTriggers(workflow.id);
+  };
+
   return (
     <div data-testid="workflows-page" className="space-y-6">
       <div className="flex items-center justify-between">
