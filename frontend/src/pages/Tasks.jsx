@@ -201,11 +201,25 @@ export default function Tasks({ user }) {
           <div className="mb-3 p-2 bg-[#eff2f5] rounded text-xs">
             <div className="flex items-center justify-between">
               <span className="font-medium text-[#0a69a7]">🔄 In Workflow</span>
-              {currentStep && (
-                <span className="text-[#718096]">
-                  Step: {workflowState.step_history?.find(s => s.step_id === currentStep)?.step_name || currentStep}
-                </span>
-              )}
+              <div className="flex items-center space-x-2">
+                {currentStep && (
+                  <span className="text-[#718096]">
+                    Step: {workflowState.step_history?.find(s => s.step_id === currentStep)?.step_name || currentStep}
+                  </span>
+                )}
+                {user.role === 'super_admin' || user.role === 'admin' ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openHistoryDialog(task);
+                    }}
+                    className="text-[#0a69a7] hover:text-[#084d7a] transition-colors"
+                    title="View workflow history & rewind"
+                  >
+                    <History className="w-4 h-4" />
+                  </button>
+                ) : null}
+              </div>
             </div>
             {workflowState?.completed_steps?.length > 0 && (
               <div className="mt-1 text-[#48bb78]">
