@@ -19,6 +19,9 @@ export default function Workflows() {
   const [selectedWorkflow, setSelectedWorkflow] = useState(null);
   const [aiPrompt, setAiPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [webhookTriggers, setWebhookTriggers] = useState([]);
+  const [copiedUrl, setCopiedUrl] = useState(null);
+  const [creatingWebhook, setCreatingWebhook] = useState(false);
 
   useEffect(() => {
     fetchWorkflows();
