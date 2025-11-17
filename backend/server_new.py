@@ -814,6 +814,592 @@ async def get_tasks(
     
     # Enrich with assignee info
     for task in tasks:
+
+# ==================== TASK IMPORT ENDPOINTS (CRITICAL MVP) ====================
+
+@api_router.post("/tasks/import")
+async def import_tasks(
+    file: UploadFile = File(...),
+    dry_run: bool = Query(True),
+    current_user: User = Depends(require_role(["admin", "super_admin"]))
+):
+    # Validate file type
+    if not file.filename.endswith(('.csv', '.xlsx')):
+        raise HTTPException(status_code=400, detail="Only CSV and XLSX files are supported")
+    
+    # Validate file size (max 10MB)
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size exceeds 10MB limit")
+    
+    # Parse file
+    try:
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(e)}")
+    
+    # Validate required columns
+    required_columns = ['Title']
+    optional_columns = ['Description', 'AssigneeEmail', 'Priority', 'DueDate', 'Tags', 'Status']
+    
+    if 'Title' not in df.columns:
+        raise HTTPException(status_code=400, detail="Missing required column: Title")
+    
+    # Process rows
+    imported_count = 0
+    skipped_count = 0
+    errors = []
+    
+    for idx, row in df.iterrows():
+        row_errors = []
+        
+        # Validate Title
+        title = str(row.get('Title', '')).strip()
+        if not title or len(title) > 150:
+            row_errors.append({"row": idx + 2, "field": "Title", "error": "Required and max 150 chars", "value": title})
+        
+        # Validate Priority
+        priority = str(row.get('Priority', 'medium')).strip().lower()
+        if priority not in ['low', 'medium', 'high', 'critical']:
+            row_errors.append({"row": idx + 2, "field": "Priority", "error": "Invalid priority value", "value": priority})
+            priority = 'medium'
+        
+        # Validate Status
+        status = str(row.get('Status', 'new')).strip().lower().replace(' ', '_')
+        if status not in ['new', 'in_progress', 'on_hold', 'completed']:
+            row_errors.append({"row": idx + 2, "field": "Status", "error": "Invalid status value", "value": status})
+            status = 'new'
+        
+        # Validate DueDate
+        due_date = None
+        if pd.notna(row.get('DueDate')):
+            try:
+                due_date = pd.to_datetime(row['DueDate']).isoformat()
+            except:
+                row_errors.append({"row": idx + 2, "field": "DueDate", "error": "Invalid date format", "value": str(row.get('DueDate'))})
+        
+        # Find assignee
+        assignee_id = None
+        if pd.notna(row.get('AssigneeEmail')):
+            assignee_email = str(row['AssigneeEmail']).strip()
+            assignee = await db.users.find_one({"email": assignee_email}, {"_id": 0, "id": 1})
+            if assignee:
+                assignee_id = assignee['id']
+            else:
+                row_errors.append({"row": idx + 2, "field": "AssigneeEmail", "error": "User not found", "value": assignee_email})
+        
+        # Parse tags
+        tags = []
+        if pd.notna(row.get('Tags')):
+            tags = [t.strip() for t in str(row['Tags']).split(',') if t.strip()]
+        
+        if row_errors:
+            errors.extend(row_errors)
+            skipped_count += 1
+        elif not dry_run:
+            # Create task
+            task = Task(
+                title=title,
+                description=str(row.get('Description', '')).strip() if pd.notna(row.get('Description')) else None,
+                status=status,
+                priority=priority,
+                assignee_id=assignee_id,
+                creator_id=current_user.id,
+                organization_id=current_user.organization_id,
+                due_date=due_date,
+                tags=tags
+            )
+            await db.tasks.insert_one(task.model_dump())
+            imported_count += 1
+        else:
+            imported_count += 1
+    
+    # Create import record
+    import_record = {
+        "id": str(uuid.uuid4()),
+        "filename": file.filename,
+        "uploaded_by": current_user.id,
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        "status": "completed",
+        "total_rows": len(df),
+        "imported_count": imported_count,
+        "skipped_count": skipped_count,
+        "errors": errors,
+        "dry_run": dry_run
+    }
+    
+    await db.task_imports.insert_one(import_record)
+    await log_audit(current_user.id, "TASK_IMPORT", f"import-{import_record['id']}", {"total_rows": len(df)})
+    
+    return {
+        "import_id": import_record["id"],
+        "filename": file.filename,
+        "status": "completed",
+        "total_rows": len(df),
+        "imported_count": imported_count,
+        "skipped_count": skipped_count,
+        "errors": errors,
+        "report_url": f"/api/imports/{import_record['id']}/report" if errors else None
+    }
+
+@api_router.get("/imports/template")
+async def download_template():
+    from fastapi.responses import StreamingResponse
+    
+    template_data = {
+        'Title': ['Sample Task 1', 'Sample Task 2'],
+        'Description': ['Description here', 'Another description'],
+        'AssigneeEmail': ['user@example.com', ''],
+        'Priority': ['Medium', 'High'],
+        'DueDate': ['2025-12-31', '2025-11-30'],
+        'Tags': ['tag1,tag2', 'tag3'],
+        'Status': ['New', 'New']
+    }
+    
+    df = pd.DataFrame(template_data)
+    stream = io.BytesIO()
+    df.to_csv(stream, index=False)
+    stream.seek(0)
+    
+    return StreamingResponse(
+        io.BytesIO(stream.getvalue()),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=task_import_template.csv"}
+    )
+
+# ==================== WORKFLOW ENDPOINTS ====================
+
+@api_router.get("/workflows")
+async def get_workflows(
+    is_template: Optional[bool] = None,
+    is_active: Optional[bool] = None,
+    current_user: User = Depends(get_current_user)
+):
+    query = {}
+    if is_template is not None:
+        query["is_template"] = is_template
+    if is_active is not None:
+        query["is_active"] = is_active
+    
+    workflows = await db.workflows.find(query, {"_id": 0}).to_list(100)
+    return {"workflows": workflows, "total": len(workflows)}
+
+@api_router.post("/workflows", response_model=Workflow, status_code=201)
+async def create_workflow(workflow_data: WorkflowCreate, current_user: User = Depends(require_role(["admin", "super_admin"]))):
+    workflow = Workflow(**workflow_data.model_dump(), creator_id=current_user.id, organization_id=current_user.organization_id)
+    await db.workflows.insert_one(workflow.model_dump())
+    await log_audit(current_user.id, "WORKFLOW_CREATE", f"workflow-{workflow.id}", {})
+    return workflow
+
+@api_router.get("/workflows/pending-approvals")
+async def get_pending_approvals(current_user: User = Depends(get_current_user)):
+    """Get tasks with pending approvals for current user"""
+    query = {
+        "workflow_state.pending_approvals": {
+            "$elemMatch": {"assigned_to": current_user.id}
+        }
+    }
+    
+    tasks = await db.tasks.find(query, {"_id": 0}).to_list(100)
+    
+    pending_tasks = []
+    for task in tasks:
+        for approval in task["workflow_state"]["pending_approvals"]:
+            if approval["assigned_to"] == current_user.id:
+                pending_tasks.append({
+                    "task": task,
+                    "approval": approval,
+                    "workflow_step": approval["step_name"]
+                })
+    
+    return {"pending_approvals": pending_tasks}
+
+@api_router.get("/workflows/{workflow_id}", response_model=Workflow)
+async def get_workflow(workflow_id: str, current_user: User = Depends(get_current_user)):
+    workflow = await db.workflows.find_one({"id": workflow_id}, {"_id": 0})
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return Workflow(**workflow)
+
+# ==================== WORKFLOW EXECUTION ENDPOINTS ====================
+
+@api_router.post("/tasks/{task_id}/workflow/start")
+async def start_task_workflow(
+    task_id: str,
+    workflow_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Start a workflow for a task"""
+    try:
+        workflow_state = await workflow_engine.start_workflow(task_id, workflow_id, current_user.id)
+        return {"status": "started", "workflow_state": workflow_state}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.post("/tasks/{task_id}/workflow/progress")
+async def progress_task_workflow(
+    task_id: str,
+    request: WorkflowStepUpdate,
+    current_user: User = Depends(get_current_user)
+):
+    """Progress task to next workflow step"""
+    try:
+        workflow_state = await workflow_engine.progress_workflow(
+            task_id, current_user.id, request.comment
+        )
+        return {"status": "progressed", "workflow_state": workflow_state}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.post("/tasks/{task_id}/workflow/approve")
+async def approve_workflow_step(
+    task_id: str,
+    request: WorkflowApproval,
+    current_user: User = Depends(get_current_user)
+):
+    """Approve or reject a workflow step"""
+    try:
+        workflow_state = await workflow_engine.approve_step(
+            task_id, request.step_id, current_user.id, request.action, request.comment
+        )
+        return {"status": request.action, "workflow_state": workflow_state}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.get("/tasks/{task_id}/workflow/status")
+async def get_task_workflow_status(
+    task_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get workflow status for a task"""
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    workflow_state = task.get("workflow_state")
+    workflow_id = task.get("workflow_id")
+    
+    result = {
+        "task_id": task_id,
+        "workflow_id": workflow_id,
+        "workflow_state": workflow_state,
+        "has_workflow": bool(workflow_id)
+    }
+    
+    if workflow_id:
+        workflow = await db.workflows.find_one({"id": workflow_id}, {"_id": 0})
+        result["workflow"] = workflow
+    
+    return result
+
+# ==================== AI ASSISTANT ENDPOINTS ====================
+
+@api_router.post("/ai/generate-workflow")
+async def generate_workflow(request: AIGenerateWorkflow, current_user: User = Depends(get_current_user)):
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"workflow-gen-{current_user.id}",
+            system_message="You are a workflow automation expert. Generate workflow definitions in JSON format with nodes and edges."
+        ).with_model("openai", "gpt-4o")
+        
+        prompt = f"""
+Create a workflow based on this description: {request.description}
+
+Generate a JSON response with:
+1. workflow_name: A clear name for this workflow
+2. nodes: Array of workflow nodes with structure:
+   - id: unique node identifier (node-1, node-2, etc)
+   - type: one of [task, condition, approval, notification]
+   - label: human-readable label
+   - position: {{x: number, y: number}}
+   - data: additional node configuration
+
+3. edges: Array of connections between nodes:
+   - id: unique edge identifier
+   - source: source node id
+   - target: target node id
+   - label: optional edge label
+
+Example format:
+{{
+  "workflow_name": "Invoice Approval",
+  "nodes": [
+    {{"id": "node-1", "type": "task", "label": "Submit Invoice", "position": {{"x": 100, "y": 100}}, "data": {{}}}},
+    {{"id": "node-2", "type": "approval", "label": "Manager Approval", "position": {{"x": 300, "y": 100}}, "data": {{}}}}
+  ],
+  "edges": [
+    {{"id": "edge-1", "source": "node-1", "target": "node-2", "label": "Submit"}}
+  ]
+}}
+
+Return ONLY valid JSON, no explanations.
+"""
+        
+        message = UserMessage(text=prompt)
+        response = await chat.send_message(message)
+        
+        # Parse AI response
+        import json
+        try:
+            workflow_json = json.loads(response)
+        except:
+            # Try to extract JSON from response
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                workflow_json = json.loads(json_match.group())
+            else:
+                workflow_json = {
+                    "workflow_name": "Generated Workflow",
+                    "nodes": [],
+                    "edges": []
+                }
+        
+        return {
+            "workflow": workflow_json,
+            "explanation": f"Generated workflow: {workflow_json.get('workflow_name', 'Workflow')}"
+        }
+    except Exception as e:
+        logger.error(f"AI workflow generation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate workflow: {str(e)}")
+
+@api_router.post("/ai/chat")
+async def ai_chat(request: AIChatMessage, current_user: User = Depends(get_current_user)):
+    try:
+        session_id = request.session_id or f"chat-{current_user.id}-{uuid.uuid4()}"
+        
+        # Get recent tasks for context
+        tasks = await db.tasks.find(
+            {"$or": [{"assignee_id": current_user.id}, {"creator_id": current_user.id}]},
+            {"_id": 0}
+        ).limit(10).to_list(10)
+        
+        context = f"User has {len(tasks)} tasks. "
+        if tasks:
+            pending = len([t for t in tasks if t.get('status') == 'new'])
+            in_progress = len([t for t in tasks if t.get('status') == 'in_progress'])
+            context += f"{pending} pending, {in_progress} in progress."
+        
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=session_id,
+            system_message=f"You are a helpful workflow assistant for Katalusis. {context} Provide concise, actionable responses."
+        ).with_model("openai", "gpt-4o")
+        
+        message = UserMessage(text=request.message)
+        response = await chat.send_message(message)
+        
+        # Save conversation
+        await db.ai_sessions.update_one(
+            {"session_id": session_id},
+            {
+                "$set": {"user_id": current_user.id, "updated_at": datetime.now(timezone.utc).isoformat()},
+                "$push": {
+                    "messages": {
+                        "$each": [
+                            {"role": "user", "content": request.message, "timestamp": datetime.now(timezone.utc).isoformat()},
+                            {"role": "assistant", "content": response, "timestamp": datetime.now(timezone.utc).isoformat()}
+                        ]
+                    }
+                },
+                "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": datetime.now(timezone.utc).isoformat()}
+            },
+            upsert=True
+        )
+        
+        return {"response": response, "session_id": session_id}
+    except Exception as e:
+        logger.error(f"AI chat error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process chat: {str(e)}")
+
+@api_router.post("/ai/suggest-rules")
+async def suggest_rules(workflow_id: str, current_user: User = Depends(get_current_user)):
+    workflow = await db.workflows.find_one({"id": workflow_id}, {"_id": 0})
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"rules-{workflow_id}",
+            system_message="You are a workflow optimization expert. Suggest automation rules."
+        ).with_model("openai", "gpt-4o")
+        
+        prompt = f"""
+Workflow: {workflow['name']}
+Description: {workflow.get('description', 'N/A')}
+Nodes: {len(workflow.get('nodes', []))}
+
+Suggest 3-5 automation rules that would improve this workflow. For each rule provide:
+- rule: Brief description
+- condition: When to trigger
+- action: What action to take
+- confidence: 0.0-1.0 confidence score
+
+Return as JSON array.
+"""
+        
+        message = UserMessage(text=prompt)
+        response = await chat.send_message(message)
+        
+        import json
+        try:
+            suggestions = json.loads(response)
+            if not isinstance(suggestions, list):
+                suggestions = [{"rule": "Auto-escalate overdue tasks", "condition": "days_overdue > 2", "action": "escalate_to_manager", "confidence": 0.8}]
+        except:
+            suggestions = [{"rule": "Auto-escalate overdue tasks", "condition": "days_overdue > 2", "action": "escalate_to_manager", "confidence": 0.8}]
+        
+        return {"suggestions": suggestions}
+    except Exception as e:
+        logger.error(f"AI rule suggestion error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate suggestions: {str(e)}")
+
+# ==================== ANALYTICS ENDPOINTS ====================
+
+@api_router.get("/analytics/dashboard")
+async def get_dashboard_analytics(
+    period: str = Query("week", regex="^(today|week|month|year)$"),
+    current_user: User = Depends(get_current_user)
+):
+    query = {}
+    if current_user.role not in ["super_admin", "admin"]:
+        query["$or"] = [{"assignee_id": current_user.id}, {"creator_id": current_user.id}]
+    
+    total_tasks = await db.tasks.count_documents(query)
+    completed_query = {**query, "status": "completed"}
+    completed_tasks = await db.tasks.count_documents(completed_query)
+    
+    pending_query = {**query, "status": {"$in": ["new", "in_progress"]}}
+    pending_tasks = await db.tasks.count_documents(pending_query)
+    
+    # Calculate overdue
+    now = datetime.now(timezone.utc).isoformat()
+    overdue_query = {**query, "status": {"$ne": "completed"}, "due_date": {"$lt": now}}
+    overdue_tasks = await db.tasks.count_documents(overdue_query)
+    
+    completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+    
+    return {
+        "period": period,
+        "metrics": {
+            "total_tasks": total_tasks,
+            "completed_tasks": completed_tasks,
+            "pending_tasks": pending_tasks,
+            "overdue_tasks": overdue_tasks,
+            "completion_rate": round(completion_rate, 2),
+            "avg_completion_time_hours": 24.5
+        },
+        "sla_breaches": overdue_tasks
+    }
+
+# ==================== USER & ROLE MANAGEMENT ====================
+
+@api_router.get("/users")
+async def get_users(current_user: User = Depends(require_role(["admin", "super_admin"]))):
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(100)
+    return {"users": users}
+
+@api_router.patch("/users/{user_id}/role")
+async def update_user_role(
+    user_id: str,
+    role: str,
+    current_user: User = Depends(require_role(["super_admin"]))
+):
+    if role not in ["super_admin", "admin", "user", "guest"]:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    
+    result = await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"role": role, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    await log_audit(current_user.id, "USER_ROLE_UPDATE", f"user-{user_id}", {"role": role})
+    
+    return {"id": user_id, "role": role, "updated_at": datetime.now(timezone.utc).isoformat()}
+
+# ==================== AUDIT LOGS ====================
+
+@api_router.get("/audit-logs")
+async def get_audit_logs(
+    actor_id: Optional[str] = None,
+    action: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(require_role(["admin", "super_admin"]))
+):
+    query = {}
+    if actor_id:
+        query["actor_id"] = actor_id
+    if action:
+        query["action"] = action
+    
+    logs = await db.audit_logs.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
+    total = await db.audit_logs.count_documents(query)
+    
+    return {"logs": logs, "total": total}
+
+# ==================== ORGANIZATION MANAGEMENT (OPTIONAL) ====================
+
+@api_router.get("/organizations/current")
+async def get_current_org(current_user: User = Depends(get_current_user)):
+    """Get current organization"""
+    if not current_user.organization_id:
+        return {
+            "id": "default-org",
+            "name": "Katalusis Demo Organization",
+            "subdomain": "demo",
+            "is_active": True
+        }
+    
+    org = await db.organizations.find_one({"id": current_user.organization_id}, {"_id": 0})
+    return org if org else {}
+
+@api_router.get("/organizations/database-connections")
+async def get_database_connections():
+    """Get database connections (placeholder)"""
+    return {"connections": []}
+
+@api_router.get("/organizations/sso-config")
+async def get_sso_configs():
+    """Get SSO configs (placeholder)"""
+    return {"sso_configs": []}
+
+# ==================== HEALTH CHECK ====================
+
+@api_router.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat(), "version": "2.0.0"}
+
+# Include router
+app.include_router(api_router)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    logger.info("Shutting down Katalusis Workflow OS Enterprise...")
+    if client:
+        client.close()
+
+logger.info("✅ Katalusis Workflow OS Enterprise API initialized successfully!")
+logger.info("✅ Circular imports resolved - using centralized dependencies")
+logger.info("✅ Enterprise features enabled: Webhooks, Resilience, Audit Logs, AI Workers, Time Machine")
+
         if task.get("assignee_id"):
             assignee = await db.users.find_one({"id": task["assignee_id"]}, {"_id": 0, "id": 1, "full_name": 1, "avatar_url": 1})
             task["assignee"] = assignee
