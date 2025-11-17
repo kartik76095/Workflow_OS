@@ -825,6 +825,73 @@ async def get_tasks(
         "offset": offset
     }
 
+@api_router.post("/tasks", response_model=Task, status_code=201)
+async def create_task(task_data: TaskCreate, current_user: User = Depends(get_current_user)):
+    """Create a new task"""
+    task = Task(
+        **task_data.model_dump(),
+        creator_id=current_user.id,
+        organization_id=current_user.organization_id
+    )
+    
+    await db.tasks.insert_one(task.model_dump())
+    await log_audit(current_user.id, "TASK_CREATE", f"task-{task.id}", {"title": task.title})
+    
+    return task
+
+@api_router.get("/tasks/{task_id}", response_model=Task)
+async def get_task(task_id: str, current_user: User = Depends(get_current_user)):
+    """Get a specific task"""
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Check permissions
+    if current_user.role not in ["super_admin", "admin"]:
+        if task.get("assignee_id") != current_user.id and task.get("creator_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    
+    return Task(**task)
+
+@api_router.put("/tasks/{task_id}", response_model=Task)
+async def update_task(task_id: str, task_update: TaskUpdate, current_user: User = Depends(get_current_user)):
+    """Update a task"""
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Check permissions
+    if current_user.role not in ["super_admin", "admin"]:
+        if task.get("assignee_id") != current_user.id and task.get("creator_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Update fields
+    update_data = {k: v for k, v in task_update.model_dump().items() if v is not None}
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.tasks.update_one({"id": task_id}, {"$set": update_data})
+    await log_audit(current_user.id, "TASK_UPDATE", f"task-{task_id}", update_data)
+    
+    updated_task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    return Task(**updated_task)
+
+@api_router.delete("/tasks/{task_id}", status_code=204)
+async def delete_task(task_id: str, current_user: User = Depends(get_current_user)):
+    """Delete a task"""
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Check permissions
+    if current_user.role not in ["super_admin", "admin"]:
+        if task.get("creator_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="Only task creator or admin can delete")
+    
+    await db.tasks.delete_one({"id": task_id})
+    await log_audit(current_user.id, "TASK_DELETE", f"task-{task_id}", {"title": task.get("title")})
+    
+    return None
+
 # ==================== TASK IMPORT ENDPOINTS (CRITICAL MVP) ====================
 
 @api_router.post("/tasks/import")
