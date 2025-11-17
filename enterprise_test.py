@@ -10,8 +10,8 @@ import json
 from datetime import datetime
 
 BACKEND_URL = "https://workflow-engine-28.preview.emergentagent.com/api"
-TEST_USER_EMAIL = "admin@katalusis.com"
-TEST_USER_PASSWORD = "admin123"
+TEST_USER_EMAIL = "test@katalusis.com"
+TEST_USER_PASSWORD = "test123"
 
 class EnterpriseTester:
     def __init__(self):
