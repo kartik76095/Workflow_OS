@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: katalusis-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: katalusis_secret_2024
+      MONGO_INITDB_DATABASE: katalusis_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - katalusis-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Katalusis Workflow OS Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: katalusis-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # MongoDB Configuration
+      MONGO_URL: mongodb://admin:katalusis_secret_2024@mongodb:27017/katalusis_db?authSource=admin
+      DB_NAME: katalusis_db
+      
+      # JWT Configuration
+      JWT_SECRET: ${JWT_SECRET:-your-secret-jwt-key-change-in-production}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRATION_HOURS: 24
+      
+      # Emergent LLM Key (for AI features)
+      EMERGENT_LLM_KEY: ${EMERGENT_LLM_KEY:-your-emergent-llm-key}
+      
+      # CORS Configuration
+      CORS_ORIGINS: "*"
+      
+      # Encryption Key (for webhook secrets, etc.)
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-encryption-key-32-chars-min}
+      
+      # Application Settings
+      ENVIRONMENT: production
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - katalusis-network
+    volumes:
+      - app_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  katalusis-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  app_logs:
+    driver: local
