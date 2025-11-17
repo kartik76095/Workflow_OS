@@ -101,3 +101,184 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  Transform the Katalusis Workflow OS MVP into an enterprise-ready platform by implementing 6 key modules:
+  1. Fix Circular Imports (STEP 1 - IN PROGRESS)
+  2. Trust Architecture (Immutable Audit Logs)
+  3. Connectivity Module (Inbound/Outbound Webhooks)
+  4. Resilience Layer (Node-level retry policies, failure paths)
+  5. AI Agent Node (AI worker workflow node)
+  6. Time Machine (Workflow state rewind feature)
+
+backend:
+  - task: "Fix Circular Imports - Refactor Auth Dependencies"
+    implemented: true
+    working: "NA"  # Needs testing
+    file: "backend/server.py, backend/dependencies.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Completed refactoring:
+          1. Created dependencies.py with centralized auth functions (get_current_user, require_role, hash_password, etc.)
+          2. Created server_new.py with all endpoints properly importing from dependencies.py
+          3. Migrated all API endpoints (auth, tasks, workflows, AI, webhooks, time machine, analytics, users, audit logs)
+          4. Added enterprise features: WebhookTrigger endpoints, Time Machine endpoint, enhanced audit logging
+          5. Replaced old server.py with refactored version
+          6. Backend started successfully with log: "✅ Circular imports resolved - using centralized dependencies"
+          7. CRITICAL: Need to test login endpoint to verify authentication works correctly
+
+  - task: "User Authentication - Login Endpoint"
+    implemented: true
+    working: "NA"  # Needs testing
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Login endpoint migrated to new server.py, uses centralized auth functions from dependencies.py. Must test to ensure no circular import issues."
+
+  - task: "Webhook Triggers - Inbound/Outbound"
+    implemented: true
+    working: "NA"  # Needs testing
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Implemented webhook endpoints:
+          - POST /api/webhooks/triggers (create inbound webhook)
+          - GET /api/webhooks/triggers (list webhooks)
+          - POST /api/webhooks/incoming/{trigger_id} (receive webhook and trigger workflow)
+          - DELETE /api/webhooks/triggers/{trigger_id}
+
+  - task: "Time Machine - Workflow Rewind"
+    implemented: true
+    working: "NA"  # Needs testing
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Implemented Time Machine feature:
+          - POST /api/tasks/{task_id}/workflow/rewind endpoint (admin only)
+          - rewind_workflow method in EnterpriseWorkflowEngine
+          - Logs rewind action with immutable audit trail
+          - Updates workflow state to target step from history
+
+  - task: "Resilience Layer - Retry & Error Handling"
+    implemented: true
+    working: "NA"  # Needs testing
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Implemented resilience features:
+          - execute_node_with_resilience method with configurable retry policies
+          - retry_policy on WorkflowNode (max_attempts, delay_seconds, backoff)
+          - on_error_next_node for failure path routing
+          - Workflow suspension on max retries exhausted
+
+  - task: "AI Agent Node - Workflow Execution"
+    implemented: true
+    working: "NA"  # Needs testing
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Implemented AI Worker Node:
+          - AIWorkerNode model with system_prompt, user_prompt, model, output_variable
+          - _execute_ai_worker method in EnterpriseWorkflowEngine
+          - Uses Jinja2 templates to inject workflow variables into prompts
+          - Stores AI response in workflow variables
+
+  - task: "Immutable Audit Logs"
+    implemented: true
+    working: "NA"  # Needs testing
+    file: "backend/dependencies.py, backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Enhanced audit logging:
+          - Centralized log_audit function in dependencies.py
+          - AuditLog model with actor_id, action, target_resource, changes, metadata
+          - Added AuditMiddleware to capture IP and user agent
+          - Audit logs on all critical operations: task updates, workflow actions, user role changes, webhook triggers
+          - GET /api/audit-logs endpoint for admins
+
+frontend:
+  - task: "Frontend compatibility check"
+    implemented: false
+    working: "NA"
+    file: "frontend/src/pages/*.jsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Frontend should remain compatible with refactored backend API. No breaking changes to API contracts."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Fix Circular Imports - Refactor Auth Dependencies"
+    - "User Authentication - Login Endpoint"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      STEP 1 IMPLEMENTATION COMPLETE: Fixed Circular Imports
+      
+      Refactoring Summary:
+      - Created dependencies.py to centralize auth functions and break circular dependency
+      - Migrated all endpoints from server.py to new structure
+      - Added all enterprise features requested in roadmap:
+        * Webhooks (inbound/outbound)
+        * Time Machine (workflow rewind)
+        * Resilience Layer (retry policies, error paths)
+        * AI Agent Node (AI-driven workflow tasks)
+        * Enhanced Audit Logs (immutable, comprehensive)
+      
+      Backend is running successfully with no import errors.
+      
+      NEXT STEP: Test critical endpoints to ensure refactor didn't break functionality:
+      1. Login endpoint (critical - authentication must work)
+      2. Task CRUD operations
+      3. Workflow execution
+      4. New webhook endpoints
+      5. Time Machine endpoint
+      
+      Request backend testing agent to validate login and core functionality.
