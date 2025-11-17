@@ -20,6 +20,8 @@ export default function Tasks({ user }) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [selectedTaskForHistory, setSelectedTaskForHistory] = useState(null);
 
   // New task form
   const [newTask, setNewTask] = useState({
