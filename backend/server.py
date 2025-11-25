@@ -13,7 +13,32 @@ import logging
 import uuid
 import pandas as pd
 import io
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+# ===========================================================
+# START: Local AI Placeholder (Fixes missing Emergent Library)
+# ===========================================================
+class UserMessage:
+    def __init__(self, content):
+        self.content = content
+
+class LlmChat:
+    """
+    A placeholder class to replace the missing 'emergentintegrations' library.
+    This allows the server to start locally without crashing.
+    """
+    def __init__(self, model=None, api_key=None):
+        self.model = model
+
+    def generate(self, messages, **kwargs):
+        # This is what returns when you try to use AI
+        return "⚠️ AI features are currently disabled in Local Docker mode. Please configure a standard OpenAI integration."
+        
+    # Handle different method names the code might use
+    def send(self, *args, **kwargs):
+        return self.generate(args)
+# ===========================================================
+# END: Local AI Placeholder
+# ===========================================================
 
 # Import dependencies
 from dependencies import (
@@ -72,6 +97,17 @@ class AuditMiddleware(BaseHTTPMiddleware):
 app.add_middleware(AuditMiddleware)
 
 # ==================== MODELS ====================
+
+class TenantOnboard(BaseModel):
+    company_name: str
+    admin_email: EmailStr
+    admin_name: str
+
+class Organization(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    is_active: bool = True
 
 # User Models (simplified)
 class UserCreate(BaseModel):
@@ -783,6 +819,31 @@ async def login(credentials: UserLogin):
     }
 
 @api_router.get("/auth/me", response_model=User)
+# ==================== PASSWORD MANAGEMENT ====================
+
+class PasswordChange(BaseModel):
+    new_password: str = Field(min_length=8)
+
+@api_router.post("/auth/change-password")
+async def change_password(
+    data: PasswordChange, 
+    current_user: User = Depends(get_current_user)
+):
+    """Force password change endpoint"""
+    # hash the new password
+    new_hash = hash_password(data.new_password)
+    
+    await db.users.update_one(
+        {"id": current_user.id},
+        {
+            "$set": {
+                "password_hash": new_hash, 
+                "must_change_password": False, 
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+        }
+    )
+    return {"status": "success", "message": "Password updated successfully"}
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
@@ -797,7 +858,8 @@ async def get_tasks(
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user)
 ):
-    query = {}
+    #  SECURITY FIX: Base query always enforces Organization ID
+    query = {"organization_id": current_user.organization_id}
     if status:
         query["status"] = status
     if priority:
@@ -1055,7 +1117,13 @@ async def get_workflows(
     is_active: Optional[bool] = None,
     current_user: User = Depends(get_current_user)
 ):
-    query = {}
+    # SECURITY FIX: Show my org's workflows OR public templates
+    query = {
+        "$or": [
+            {"organization_id": current_user.organization_id},
+            {"is_template": True}  # Templates can be shared if you want
+        ]
+    }
     if is_template is not None:
         query["is_template"] = is_template
     if is_active is not None:
@@ -1343,7 +1411,7 @@ async def get_dashboard_analytics(
     period: str = Query("week", regex="^(today|week|month|year)$"),
     current_user: User = Depends(get_current_user)
 ):
-    query = {}
+    query = {"organization_id": current_user.organization_id}
     if current_user.role not in ["super_admin", "admin"]:
         query["$or"] = [{"assignee_id": current_user.id}, {"creator_id": current_user.id}]
     
@@ -1378,7 +1446,10 @@ async def get_dashboard_analytics(
 
 @api_router.get("/users")
 async def get_users(current_user: User = Depends(require_role(["admin", "super_admin"]))):
-    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(100)
+    # SECURITY FIX: Only show users from MY organization
+    query = {"organization_id": current_user.organization_id}
+    
+    users = await db.users.find(query, {"_id": 0, "password_hash": 0}).to_list(100)
     return {"users": users}
 
 @api_router.patch("/users/{user_id}/role")
@@ -1402,6 +1473,24 @@ async def update_user_role(
     
     return {"id": user_id, "role": role, "updated_at": datetime.now(timezone.utc).isoformat()}
 
+@api_router.delete("/users/{user_id}", status_code=204)
+async def delete_user(user_id: str, current_user: User = Depends(require_super_admin)):
+    """Delete a user (Super Admin only)"""
+    
+    if user_id == current_user.id:
+        raise HTTPException(status_code=403, detail="Cannot delete your own account while logged in")
+
+    # Check if user exists
+    result = await db.users.delete_one({"id": user_id})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    # Log the action (Immutable Audit Trail)
+    await log_audit(current_user.id, "USER_DELETE", f"user-{user_id}", {"deleted_by": current_user.email})
+    
+    return None
+
 # ==================== AUDIT LOGS ====================
 
 @api_router.get("/audit-logs")
@@ -1412,6 +1501,17 @@ async def get_audit_logs(
     current_user: User = Depends(require_role(["admin", "super_admin"]))
 ):
     query = {}
+    # SECURITY FIX: Enforce Organization Scope via Actors
+    # Find all user IDs belonging to this organization
+    org_users = await db.users.find(
+        {"organization_id": current_user.organization_id}, 
+        {"id": 1}
+    ).to_list(1000)
+    org_user_ids = [u["id"] for u in org_users]
+    org_user_ids.append("system") # Optional: Include system events
+    # Only fetch logs where the ACTOR is in my organization
+    query["actor_id"] = {"$in": org_user_ids}
+
     if actor_id:
         query["actor_id"] = actor_id
     if action:
@@ -1422,31 +1522,59 @@ async def get_audit_logs(
     
     return {"logs": logs, "total": total}
 
-# ==================== ORGANIZATION MANAGEMENT (OPTIONAL) ====================
+# ==================== SUPER ADMIN: TENANT PROVISIONING ====================
 
-@api_router.get("/organizations/current")
-async def get_current_org(current_user: User = Depends(get_current_user)):
-    """Get current organization"""
-    if not current_user.organization_id:
-        return {
-            "id": "default-org",
-            "name": "Katalusis Demo Organization",
-            "subdomain": "demo",
-            "is_active": True
-        }
+@api_router.post("/admin/onboard-tenant", status_code=201)
+async def onboard_tenant(
+    data: TenantOnboard, 
+    current_user: User = Depends(require_role(["super_admin"]))
+):
+    """
+    One-click setup for a new client (Organization + Admin User)
+    """
+    # 1. Check if user already exists
+    if await db.users.find_one({"email": data.admin_email}):
+        raise HTTPException(status_code=400, detail="User email already exists")
+
+    # 2. Create the Organization
+    new_org = Organization(name=data.company_name)
+    await db.organizations.insert_one(new_org.model_dump())
+
+    # 3. Create the Organization Admin
+    # We generate a random temporary password
+    temp_password = f"Welcome{uuid.uuid4().hex[:4].upper()}!"
     
-    org = await db.organizations.find_one({"id": current_user.organization_id}, {"_id": 0})
-    return org if org else {}
+    new_user = User(
+        email=data.admin_email,
+        full_name=data.admin_name,
+        role="admin", # They are Admin of THEIR company, not Super Admin
+        organization_id=new_org.id,
+        is_active=True,
+        must_change_password=True # Force them to set their own password
+    )
+    
+    user_doc = new_user.model_dump()
+    user_doc["password_hash"] = hash_password(temp_password)
+    
+    await db.users.insert_one(user_doc)
 
-@api_router.get("/organizations/database-connections")
-async def get_database_connections():
-    """Get database connections (placeholder)"""
-    return {"connections": []}
+    # 4. Audit Log
+    await log_audit(
+        current_user.id, 
+        "TENANT_ONBOARDED", 
+        f"org-{new_org.id}", 
+        {"company": data.company_name, "admin_email": data.admin_email}
+    )
 
-@api_router.get("/organizations/sso-config")
-async def get_sso_configs():
-    """Get SSO configs (placeholder)"""
-    return {"sso_configs": []}
+    return {
+        "status": "success",
+        "organization": new_org,
+        "admin_user": {
+            "email": data.admin_email,
+            "temporary_password": temp_password
+        },
+        "message": "Send these credentials to the client securely."
+    }
 
 # ==================== HEALTH CHECK ====================
 
@@ -1456,6 +1584,10 @@ async def health_check():
 
 # Include router
 app.include_router(api_router)
+
+# Register the new Organization Router
+from organization_endpoints import router as organization_router
+app.include_router(organization_router, prefix="/api")
 
 # CORS middleware
 app.add_middleware(
@@ -1483,7 +1615,7 @@ import os.path
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     # Mount static files
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    app.mount("/static", StaticFiles(directory=str(static_dir / "static")), name="static")
     
     # Serve index.html for all non-API routes (SPA routing)
     @app.get("/{full_path:path}")

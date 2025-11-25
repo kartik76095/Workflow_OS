@@ -34,6 +34,7 @@ class User(BaseModel):
     full_name: str
     role: str = "user"
     is_active: bool = True
+    must_change_password: bool = False
     organization_id: Optional[str] = None
     external_id: Optional[str] = None
     avatar_url: Optional[str] = None

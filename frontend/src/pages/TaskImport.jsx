@@ -6,8 +6,7 @@ import { Card } from '../components/ui/card';
 import { toast } from 'sonner';
 import { Progress } from '../components/ui/progress';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const API = "http://localhost:8000/api";
 
 export default function TaskImport() {
   const [file, setFile] = useState(null);

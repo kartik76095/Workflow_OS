@@ -5,17 +5,17 @@ FROM node:18-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-# Copy package files
-COPY frontend/package.json frontend/yarn.lock ./
+# Copy ONLY package.json first (Safer than looking for specific lock files)
+COPY frontend/package.json ./
 
-# Install dependencies
-RUN yarn install --frozen-lockfile
+# Install dependencies using standard NPM
+RUN npm install --legacy-peer-deps && npm install ajv@8.12.0 --legacy-peer-deps
 
 # Copy frontend source
 COPY frontend/ ./
 
 # Build React app
-RUN yarn build
+RUN npm run build
 
 # ==================================================
 # Stage 2: Setup Python Backend

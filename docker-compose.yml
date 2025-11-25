@@ -30,6 +30,14 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: katalusis-app
+    # THIS BLOCK to fix the "Wrong IP" error
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    # 1. ADD THIS LINE TO REMOVE THE GHOST SCRIPT
+    entrypoint: []
+    # ADD THIS LINE TO FORCE THE SERVER TO START:
+    command: uvicorn server:app --host 0.0.0.0 --port 8000 --workers 4
     restart: unless-stopped
     ports:
       - "8000:8000"

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Building2, Database, Users, Shield, Plus, TestTube2, RefreshCw, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Building2, Database, Users, Shield, Plus, TestTube2, RefreshCw, CheckCircle2, XCircle, Clock, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
@@ -8,7 +8,8 @@ import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
 const API = `${BACKEND_URL}/api`;
 
 export default function Enterprise({ user }) {
@@ -29,7 +30,8 @@ export default function Enterprise({ user }) {
     username: '',
     password: '',
     ssl_enabled: false,
-    sync_users: false
+    sync_users: false,
+    user_table_name: 'users' // NEW: Default value
   });
 
   // SSO form
@@ -71,6 +73,29 @@ export default function Enterprise({ user }) {
   };
 
   const createConnection = async () => {
+    // 🛑 VALIDATION CHECK
+    if (!newConnection.name.trim()) {
+      toast.error('Connection Name is required');
+      return;
+    }
+    if (!newConnection.host.trim()) {
+      toast.error('Host is required');
+      return;
+    }
+    if (!newConnection.database.trim()) {
+      toast.error('Database Name is required');
+      return;
+    }
+    if (!newConnection.username.trim()) {
+      toast.error('Username is required');
+      return;
+    }
+    // Password is required for creation (but might be optional for editing later)
+    if (!newConnection.password) {
+      toast.error('Password is required');
+      return;
+    }
+
     const token = localStorage.getItem('token');
     try {
       await axios.post(`${API}/organizations/database-connections`, newConnection, {
@@ -78,13 +103,31 @@ export default function Enterprise({ user }) {
       });
       toast.success('Database connection created successfully!');
       setCreateConnectionOpen(false);
+      
+      // Reset form
       setNewConnection({
         name: '', connection_type: 'postgresql', host: '', port: 5432,
         database: '', username: '', password: '', ssl_enabled: false, sync_users: false
       });
+      
       fetchOrganizationData();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to create connection');
+    }
+  };
+
+  const deleteConnection = async (connectionId) => {
+    if (!window.confirm("Are you sure you want to delete this connection?")) return;
+
+    const token = localStorage.getItem('token');
+    try {
+      await axios.delete(`${API}/organizations/database-connections/${connectionId}`, {
+       headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Connection deleted');
+      fetchOrganizationData();
+    } catch (error) {
+    toast.error('Failed to delete connection');
     }
   };
 
@@ -250,24 +293,45 @@ export default function Enterprise({ user }) {
                     />
                   </div>
                 </div>
-                <div className="flex items-center space-x-4">
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={newConnection.ssl_enabled}
-                      onChange={(e) => setNewConnection({ ...newConnection, ssl_enabled: e.target.checked })}
-                    />
-                    <span className="text-sm">Enable SSL</span>
-                  </label>
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={newConnection.sync_users}
-                      onChange={(e) => setNewConnection({ ...newConnection, sync_users: e.target.checked })}
-                    />
-                    <span className="text-sm">Sync Users</span>
-                  </label>
+                <div className="space-y-3 border-t pt-4">
+                  <div className="flex items-center space-x-4">
+                    <label className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={newConnection.ssl_enabled}
+                        onChange={(e) => setNewConnection({ ...newConnection, ssl_enabled: e.target.checked })}
+                      />
+                      <span className="text-sm">Enable SSL</span>
+                    </label>
+                    <label className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={newConnection.sync_users}
+                        onChange={(e) => setNewConnection({ ...newConnection, sync_users: e.target.checked })}
+                      />
+                      <span className="text-sm font-medium">Sync Users</span>
+                    </label>
+                  </div>
+
+                  {/* ✅ NEW: This input only appears if Sync Users is checked */}
+                  {newConnection.sync_users && (
+                    <div className="bg-blue-50 p-3 rounded-md border border-blue-100 animate-in fade-in slide-in-from-top-2">
+                      <label className="block text-xs font-medium text-blue-800 mb-1">
+                        Source Table Name
+                      </label>
+                      <Input
+                        value={newConnection.user_table_name}
+                        onChange={(e) => setNewConnection({ ...newConnection, user_table_name: e.target.value })}
+                        placeholder="e.g. employees, staff, app_users"
+                        className="bg-white h-8 text-sm"
+                      />
+                      <p className="text-[10px] text-blue-600 mt-1">
+                        We will look for <b>email</b> and <b>full_name</b> columns in this table.
+                      </p>
+                    </div>
+                  )}
                 </div>
+                
                 <Button onClick={createConnection} className="w-full" style={{ backgroundColor: '#0a69a7' }}>
                   Create Connection
                 </Button>
@@ -324,6 +388,15 @@ export default function Enterprise({ user }) {
                         Sync Users
                       </Button>
                     )}
+                    {/* NEW DELETE BUTTON */}
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        onClick={() => deleteConnection(conn.id)}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                   </div>
                 </div>
               </div>

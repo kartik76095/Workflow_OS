@@ -7,8 +7,7 @@ import { Card } from '../components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from 'sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const API = "http://localhost:8000/api";
 
 export default function AuditLogs({ user }) {
   const [logs, setLogs] = useState([]);

@@ -6,8 +6,7 @@ import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const API = "http://localhost:8000/api";
 
 export default function Register({ setUser }) {
   const [email, setEmail] = useState('');

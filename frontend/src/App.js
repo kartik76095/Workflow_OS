@@ -17,7 +17,8 @@ import Enterprise from './pages/Enterprise';
 import AuditLogs from './pages/AuditLogs';
 import Layout from './components/Layout';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// ✅ FIX: Hardcode the API URL to ensure session checks work on refresh
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
 const API = `${BACKEND_URL}/api`;
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
+      // This request restores your session on refresh
       axios.get(`${API}/auth/me`, {
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -35,7 +37,9 @@ function App() {
         setLoading(false);
       })
       .catch(() => {
+        // If the token is invalid, clear it
         localStorage.removeItem('token');
+        setUser(null);
         setLoading(false);
       });
     } else {

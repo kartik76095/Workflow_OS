@@ -3,8 +3,7 @@ import axios from 'axios';
 import { BarChart3, CheckCircle2, Clock, AlertCircle, TrendingUp } from 'lucide-react';
 import { Card } from '../components/ui/card';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const API = "http://localhost:8000/api";
 
 export default function Dashboard() {
   const [analytics, setAnalytics] = useState(null);
@@ -27,7 +26,7 @@ export default function Dashboard() {
         })
       ]);
       setAnalytics(analyticsRes.data);
-      setRecentTasks(tasksRes.data.tasks);
+      setRecentTasks(tasksRes.data.tasks || []);
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
     } finally {
@@ -135,7 +134,7 @@ export default function Dashboard() {
       {/* Recent Tasks */}
       <Card className="p-6 bg-white border border-[#e2e8f0]">
         <h3 className="text-lg font-semibold text-[#1a202c] mb-4">Recent Tasks</h3>
-        {recentTasks.length === 0 ? (
+        {(recentTasks?.length || 0) === 0 ? (
           <p className="text-[#718096] text-center py-8">No tasks yet. Create your first task!</p>
         ) : (
           <div className="space-y-3">
