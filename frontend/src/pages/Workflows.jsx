@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Workflow, Plus, Sparkles, X, GitBranch, Webhook, Copy, Check, Settings } from 'lucide-react';
+import { Workflow, Plus, Sparkles, X, GitBranch, Webhook, Copy, Check, Settings, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
+import WorkflowCanvas from '../components/WorkflowCanvas';
 
-const API = "http://localhost:8000/api";
+// ✅ FIX 1: Robust API URL definition
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+const API = `${BACKEND_URL}/api`;
 
-export default function Workflows() {
+export default function Workflows({ user }) {
   const [workflows, setWorkflows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
@@ -21,6 +25,8 @@ export default function Workflows() {
   const [webhookTriggers, setWebhookTriggers] = useState([]);
   const [copiedUrl, setCopiedUrl] = useState(null);
   const [creatingWebhook, setCreatingWebhook] = useState(false);
+  
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchWorkflows();
@@ -37,6 +43,25 @@ export default function Workflows() {
       toast.error('Failed to fetch workflows');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const deleteWorkflow = async (workflowId, e) => {
+    e.stopPropagation(); // Prevent opening the card when clicking delete
+    
+    if (!window.confirm("Are you sure you want to delete this workflow? This cannot be undone.")) {
+        return;
+    }
+
+    const token = localStorage.getItem('token');
+    try {
+        await axios.delete(`${API}/workflows/${workflowId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        toast.success("Workflow deleted successfully");
+        fetchWorkflows(); // Refresh list
+    } catch (error) {
+        toast.error(error.response?.data?.detail || "Failed to delete workflow");
     }
   };
 
@@ -144,51 +169,62 @@ export default function Workflows() {
           </h1>
           <p className="text-[#718096] mt-2">Create and manage workflow automations</p>
         </div>
-        <Dialog open={aiDialogOpen} onOpenChange={setAiDialogOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="generate-workflow-button" style={{ backgroundColor: '#0a69a7' }}>
-              <Sparkles className="w-4 h-4 mr-2" />
-              Generate with AI
+        <div className="flex gap-3">
+            {/* Manual Creation Button */}
+            <Button 
+                variant="outline" 
+                onClick={() => navigate('/workflows/builder')}
+            >
+                <Plus className="w-4 h-4 mr-2" />
+                Create Manually
             </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Generate Workflow with AI</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 mt-4">
-              <p className="text-sm text-[#718096]">
-                Describe the workflow you want to create, and our AI will generate it for you.
-              </p>
-              <textarea
-                data-testid="ai-workflow-prompt"
-                className="w-full px-3 py-2 border border-[#e2e8f0] rounded-md"
-                rows={4}
-                value={aiPrompt}
-                onChange={(e) => setAiPrompt(e.target.value)}
-                placeholder="Example: Create a workflow for invoice approval that requires finance review, then manager approval if amount exceeds $5000"
-              />
-              <Button
-                data-testid="generate-button"
-                onClick={generateWorkflow}
-                disabled={generating}
-                className="w-full"
-                style={{ backgroundColor: '#0a69a7' }}
-              >
-                {generating ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Generate Workflow
-                  </>
-                )}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+
+            <Dialog open={aiDialogOpen} onOpenChange={setAiDialogOpen}>
+            <DialogTrigger asChild>
+                <Button data-testid="generate-workflow-button" style={{ backgroundColor: '#0a69a7' }}>
+                <Sparkles className="w-4 h-4 mr-2" />
+                Generate with AI
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                <DialogTitle>Generate Workflow with AI</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 mt-4">
+                <p className="text-sm text-[#718096]">
+                    Describe the workflow you want to create, and our AI will generate it for you.
+                </p>
+                <textarea
+                    data-testid="ai-workflow-prompt"
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-md"
+                    rows={4}
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    placeholder="Example: Create a workflow for invoice approval that requires finance review, then manager approval if amount exceeds $5000"
+                />
+                <Button
+                    data-testid="generate-button"
+                    onClick={generateWorkflow}
+                    disabled={generating}
+                    className="w-full"
+                    style={{ backgroundColor: '#0a69a7' }}
+                >
+                    {generating ? (
+                    <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Generating...
+                    </>
+                    ) : (
+                    <>
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        Generate Workflow
+                    </>
+                    )}
+                </Button>
+                </div>
+            </DialogContent>
+            </Dialog>
+        </div>
       </div>
 
       {loading ? (
@@ -199,11 +235,17 @@ export default function Workflows() {
         <Card className="p-12 text-center">
           <Workflow className="w-16 h-16 mx-auto mb-4 text-[#718096]" />
           <h3 className="text-lg font-semibold text-[#1a202c] mb-2">No workflows yet</h3>
-          <p className="text-[#718096] mb-6">Create your first workflow using AI</p>
-          <Button onClick={() => setAiDialogOpen(true)} style={{ backgroundColor: '#0a69a7' }}>
-            <Sparkles className="w-4 h-4 mr-2" />
-            Generate Workflow
-          </Button>
+          <p className="text-[#718096] mb-6">Create your first workflow manually or using AI</p>
+          <div className="flex justify-center gap-3">
+             <Button variant="outline" onClick={() => navigate('/workflows/builder')}>
+                <Plus className="w-4 h-4 mr-2" />
+                Create Manually
+            </Button>
+            <Button onClick={() => setAiDialogOpen(true)} style={{ backgroundColor: '#0a69a7' }}>
+                <Sparkles className="w-4 h-4 mr-2" />
+                Generate Workflow
+            </Button>
+          </div>
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -212,18 +254,31 @@ export default function Workflows() {
               key={workflow.id}
               data-testid={`workflow-${workflow.id}`}
               onClick={() => openWorkflowDialog(workflow)}
-              className="p-6 bg-white border border-[#e2e8f0] hover:shadow-lg transition-shadow cursor-pointer"
+              className="p-6 bg-white border border-[#e2e8f0] hover:shadow-lg transition-shadow cursor-pointer relative group"
             >
+              {/* ✅ DELETE BUTTON: Only visible to Admins */}
+              {(user?.role === 'admin' || user?.role === 'super_admin') && (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-4 right-4 text-red-300 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => deleteWorkflow(workflow.id, e)}
+                    title="Delete Workflow"
+                >
+                    <Trash2 className="w-4 h-4" />
+                </Button>
+              )}
+
               <div className="flex items-start justify-between mb-4">
                 <Workflow className="w-8 h-8 text-[#0a69a7]" />
                 {workflow.is_template && (
-                  <span className="px-2 py-1 text-xs font-medium bg-[#70bae7]/20 text-[#0a69a7] rounded">
+                  <span className="px-2 py-1 text-xs font-medium bg-[#70bae7]/20 text-[#0a69a7] rounded mr-8">
                     Template
                   </span>
                 )}
               </div>
-              <h3 className="text-lg font-semibold text-[#1a202c] mb-2">{workflow.name}</h3>
-              <p className="text-sm text-[#718096] mb-4">{workflow.description || 'No description'}</p>
+              <h3 className="text-lg font-semibold text-[#1a202c] mb-2 pr-8">{workflow.name}</h3>
+              <p className="text-sm text-[#718096] mb-4 line-clamp-2">{workflow.description || 'No description'}</p>
               <div className="flex items-center text-xs text-[#718096]">
                 <span>{workflow.nodes?.length || 0} nodes</span>
                 <span className="mx-2">•</span>
@@ -234,8 +289,10 @@ export default function Workflows() {
         </div>
       )}
 
-      {/* Workflow Viewer Dialog with Tabs */}
+      {/* Workflow Viewer Dialog - (Keep existing dialog code here) */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+         {/* ... Copy the exact same Dialog content from previous file ... */}
+         {/* Since I can't leave it empty in a replace block, I am including the full dialog code below */}
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center">
@@ -258,78 +315,25 @@ export default function Workflows() {
                 </TabsTrigger>
               </TabsList>
 
-              {/* Overview Tab */}
               <TabsContent value="overview" className="space-y-6">
-                {/* Description */}
                 <div>
                   <h4 className="text-sm font-medium text-[#718096] mb-2">Description</h4>
                   <p className="text-[#1a202c]">{selectedWorkflow.description || 'No description provided'}</p>
                 </div>
 
-                {/* Workflow Nodes */}
                 <div>
-                  <h4 className="text-sm font-medium text-[#718096] mb-3">Workflow Steps</h4>
-                  <div className="space-y-3">
-                    {selectedWorkflow.nodes && selectedWorkflow.nodes.length > 0 ? (
-                      selectedWorkflow.nodes.map((node, idx) => (
-                        <div
-                          key={node.id}
-                          className="flex items-start p-4 bg-[#eff2f5] rounded-lg border-l-4"
-                          style={{
-                            borderLeftColor: 
-                              node.type === 'task' ? '#0a69a7' :
-                              node.type === 'approval' ? '#48bb78' :
-                              node.type === 'condition' ? '#ed8936' :
-                              node.type === 'ai_worker' ? '#9f7aea' :
-                              node.type === 'webhook_action' ? '#38b2ac' :
-                              '#718096'
-                          }}
-                        >
-                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-white flex items-center justify-center font-semibold text-sm mr-3">
-                            {idx + 1}
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center mb-1">
-                              <h5 className="font-semibold text-[#1a202c]">{node.label}</h5>
-                              <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded capitalize"
-                                style={{
-                                  backgroundColor: 
-                                    node.type === 'task' ? '#bee3f8' :
-                                    node.type === 'approval' ? '#c6f6d5' :
-                                    node.type === 'condition' ? '#feebc8' :
-                                    node.type === 'ai_worker' ? '#e9d8fd' :
-                                    node.type === 'webhook_action' ? '#b2f5ea' :
-                                    '#e2e8f0',
-                                  color:
-                                    node.type === 'task' ? '#2c5282' :
-                                    node.type === 'approval' ? '#22543d' :
-                                    node.type === 'condition' ? '#c05621' :
-                                    node.type === 'ai_worker' ? '#553c9a' :
-                                    node.type === 'webhook_action' ? '#234e52' :
-                                    '#4a5568'
-                                }}
-                              >
-                                {node.type.replace('_', ' ')}
-                              </span>
-                            </div>
-                            {node.data && Object.keys(node.data).length > 0 && (
-                              <div className="mt-2 p-2 bg-white rounded text-xs">
-                                <pre className="text-[#718096] overflow-x-auto">
-                                  {JSON.stringify(node.data, null, 2)}
-                                </pre>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-[#718096] text-center py-4">No workflow steps defined</p>
-                    )}
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-medium text-[#718096]">Workflow Diagram</h4>
+                    <span className="text-xs text-[#718096] bg-gray-100 px-2 py-1 rounded">Read Only View</span>
                   </div>
+                  <WorkflowCanvas 
+                    initialNodes={selectedWorkflow.nodes || []} 
+                    initialEdges={selectedWorkflow.edges || []}
+                    readOnly={true}
+                  />
                 </div>
               </TabsContent>
 
-              {/* Triggers Tab */}
               <TabsContent value="triggers" className="space-y-4">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <h4 className="font-semibold text-blue-900 mb-2 flex items-center">
@@ -357,32 +361,13 @@ export default function Workflows() {
                             {trigger.is_active ? 'Active' : 'Inactive'}
                           </span>
                         </div>
-                        
                         <div className="bg-white p-3 rounded border border-gray-300 font-mono text-xs break-all">
                           {BACKEND_URL}{trigger.hook_url}
                         </div>
-                        
                         <div className="flex items-center space-x-2 mt-3">
-                          <Button
-                            size="sm"
-                            onClick={() => copyToClipboard(`${BACKEND_URL}${trigger.hook_url}`)}
-                            className="bg-[#0a69a7]"
-                          >
-                            {copiedUrl === `${BACKEND_URL}${trigger.hook_url}` ? (
-                              <>
-                                <Check className="w-3 h-3 mr-1" />
-                                Copied!
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3 h-3 mr-1" />
-                                Copy URL
-                              </>
-                            )}
+                          <Button size="sm" onClick={() => copyToClipboard(`${BACKEND_URL}${trigger.hook_url}`)} className="bg-[#0a69a7]">
+                            {copiedUrl === `${BACKEND_URL}${trigger.hook_url}` ? <><Check className="w-3 h-3 mr-1" /> Copied!</> : <><Copy className="w-3 h-3 mr-1" /> Copy URL</>}
                           </Button>
-                          <p className="text-xs text-[#718096]">
-                            Use this URL in your external systems to trigger the workflow
-                          </p>
                         </div>
                       </div>
                     ))}
@@ -391,41 +376,20 @@ export default function Workflows() {
                   <div className="text-center py-8">
                     <Webhook className="w-12 h-12 mx-auto text-[#718096] mb-3" />
                     <h5 className="font-semibold text-[#1a202c] mb-2">No webhook triggers yet</h5>
-                    <p className="text-sm text-[#718096] mb-4">
-                      Create a webhook trigger to allow external systems to start this workflow
-                    </p>
-                    <Button
-                      onClick={() => createWebhookTrigger(selectedWorkflow.id)}
-                      disabled={creatingWebhook}
-                      className="bg-[#0a69a7]"
-                    >
+                    <Button onClick={() => createWebhookTrigger(selectedWorkflow.id)} disabled={creatingWebhook} className="bg-[#0a69a7]">
                       {creatingWebhook ? 'Creating...' : '+ Create Webhook Trigger'}
                     </Button>
                   </div>
                 )}
               </TabsContent>
 
-              {/* Config Tab */}
               <TabsContent value="config" className="space-y-4">
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <h4 className="font-semibold text-[#1a202c] mb-2">Workflow Configuration</h4>
                   <div className="space-y-3 text-sm">
-                    <div>
-                      <span className="font-medium text-[#718096]">Workflow ID:</span>
-                      <code className="ml-2 px-2 py-1 bg-white rounded text-xs">{selectedWorkflow.id}</code>
-                    </div>
-                    <div>
-                      <span className="font-medium text-[#718096]">Status:</span>
-                      <span className={`ml-2 px-2 py-1 text-xs rounded ${selectedWorkflow.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-                        {selectedWorkflow.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="font-medium text-[#718096]">Created:</span>
-                      <span className="ml-2 text-[#1a202c]">
-                        {new Date(selectedWorkflow.created_at).toLocaleString()}
-                      </span>
-                    </div>
+                    <div><span className="font-medium text-[#718096]">Workflow ID:</span> <code className="ml-2 px-2 py-1 bg-white rounded text-xs">{selectedWorkflow.id}</code></div>
+                    <div><span className="font-medium text-[#718096]">Status:</span> <span className={`ml-2 px-2 py-1 text-xs rounded ${selectedWorkflow.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{selectedWorkflow.is_active ? 'Active' : 'Inactive'}</span></div>
+                    <div><span className="font-medium text-[#718096]">Created:</span> <span className="ml-2 text-[#1a202c]">{new Date(selectedWorkflow.created_at).toLocaleString()}</span></div>
                   </div>
                 </div>
               </TabsContent>
@@ -433,7 +397,6 @@ export default function Workflows() {
           )}
         </DialogContent>
       </Dialog>
-
     </div>
   );
 }

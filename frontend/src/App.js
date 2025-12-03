@@ -16,6 +16,7 @@ import AIAssistant from './pages/AIAssistant';
 import Enterprise from './pages/Enterprise';
 import AuditLogs from './pages/AuditLogs';
 import Layout from './components/Layout';
+import WorkflowBuilder from './pages/WorkflowBuilder';
 
 // ✅ FIX: Hardcode the API URL to ensure session checks work on refresh
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
@@ -73,6 +74,7 @@ function App() {
         <Route path="/ai" element={<ProtectedRoute><Layout user={user} setUser={setUser}><AIAssistant /></Layout></ProtectedRoute>} />
         <Route path="/enterprise" element={<ProtectedRoute><Layout user={user} setUser={setUser}><Enterprise user={user} /></Layout></ProtectedRoute>} />
         <Route path="/admin/audit-logs" element={<ProtectedRoute><Layout user={user} setUser={setUser}><AuditLogs user={user} /></Layout></ProtectedRoute>} />
+        <Route path="/workflows/builder" element={<ProtectedRoute><WorkflowBuilder /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   );
