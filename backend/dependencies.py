@@ -33,6 +33,7 @@ class User(BaseModel):
     email: str
     full_name: str
     role: str = "user"
+    user_group: Optional[str] = None
     is_active: bool = True
     must_change_password: bool = False
     organization_id: Optional[str] = None
