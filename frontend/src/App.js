@@ -17,6 +17,7 @@ import Enterprise from './pages/Enterprise';
 import AuditLogs from './pages/AuditLogs';
 import Layout from './components/Layout';
 import WorkflowBuilder from './pages/WorkflowBuilder';
+import OnboardTenant from './pages/OnboardTenant';
 
 // ✅ FIX: Hardcode the API URL to ensure session checks work on refresh
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
@@ -75,6 +76,7 @@ function App() {
         <Route path="/enterprise" element={<ProtectedRoute><Layout user={user} setUser={setUser}><Enterprise user={user} /></Layout></ProtectedRoute>} />
         <Route path="/admin/audit-logs" element={<ProtectedRoute><Layout user={user} setUser={setUser}><AuditLogs user={user} /></Layout></ProtectedRoute>} />
         <Route path="/workflows/builder" element={<ProtectedRoute><WorkflowBuilder /></ProtectedRoute>} />
+        <Route path="/admin/onboard" element={<ProtectedRoute><Layout user={user} setUser={setUser}><OnboardTenant user={user} /></Layout></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   );

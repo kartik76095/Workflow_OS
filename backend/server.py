@@ -15,7 +15,7 @@ import pandas as pd
 import io
 
 # ===========================================================
-# START: Local AI Placeholder (Fixes missing Emergent Library)
+# START: Local AI Placeholder
 # ===========================================================
 class UserMessage:
     def __init__(self, content):
@@ -26,7 +26,7 @@ class LlmChat:
         self.model = model
 
     def generate(self, messages, **kwargs):
-        return "⚠️ AI features are currently disabled in Local Docker mode. Please configure a standard OpenAI integration."
+        return "⚠️ AI features are currently disabled in Local Docker mode."
         
     def send(self, *args, **kwargs):
         return self.generate(args)
@@ -108,7 +108,7 @@ class TaskCreate(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     workflow_id: Optional[str] = None
     assignee_id: Optional[str] = None
-    assignee_group: Optional[str] = None # ✅ NEW
+    assignee_group: Optional[str] = None
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -120,7 +120,7 @@ class TaskUpdate(BaseModel):
     tags: Optional[List[str]] = None
     workflow_id: Optional[str] = None
     assignee_id: Optional[str] = None
-    assignee_group: Optional[str] = None # ✅ NEW
+    assignee_group: Optional[str] = None
 
 class Task(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -140,7 +140,7 @@ class Task(BaseModel):
     comments: List[Dict[str, Any]] = Field(default_factory=list)
     attachments: List[Dict[str, Any]] = Field(default_factory=list)
     assignee_id: Optional[str] = None
-    assignee_group: Optional[str] = None # ✅ NEW
+    assignee_group: Optional[str] = None
     workflow_state: Dict[str, Any] = Field(default_factory=lambda: {
         "current_step": None,
         "step_history": [],
@@ -175,7 +175,6 @@ class WorkflowCreate(BaseModel):
     rules: List[Dict[str, Any]] = Field(default_factory=list)
     is_template: bool = False
     variables: Dict[str, Any] = Field(default_factory=dict)
-    # ✅ NEW: Global Fields Definition
     global_schema: List[Dict[str, Any]] = Field(default_factory=list)
 
 class Workflow(BaseModel):
@@ -192,7 +191,6 @@ class Workflow(BaseModel):
     edges: List[Dict[str, Any]] = Field(default_factory=list)
     rules: List[Dict[str, Any]] = Field(default_factory=list)
     variables: Dict[str, Any] = Field(default_factory=dict)
-    # ✅ NEW: Global Fields Definition
     global_schema: List[Dict[str, Any]] = Field(default_factory=list)
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -250,7 +248,6 @@ class WorkflowApproval(BaseModel):
 class WorkflowStepUpdate(BaseModel):
     action: str
     comment: Optional[str] = None
-    # ✅ NEW: Accept form data submission
     data: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 class CommentCreate(BaseModel):
@@ -403,20 +400,17 @@ class EnterpriseWorkflowEngine:
         current_step_id = workflow_state["current_step"]
         workflow = await self.db.workflows.find_one({"id": task.get("workflow_id")}, {"_id": 0})
         
-        # Find current node to log step name
         current_node = next((n for n in workflow["nodes"] if n["id"] == current_step_id), None)
         
-        # Complete current step with DATA
         workflow_state["completed_steps"].append({
             "step_id": current_step_id,
             "step_name": current_node["label"] if current_node else "Unknown",
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "completed_by": user_id,
             "comment": comment,
-            "data": data or {} # ✅ Save form data
+            "data": data or {}
         })
 
-        # ✅ Merge form data into global task metadata for cascading context
         if data:
             current_metadata = task.get("metadata", {})
             updated_metadata = {**current_metadata, **data}
@@ -437,7 +431,7 @@ class EnterpriseWorkflowEngine:
                 "status": "completed",
                 "completed_at": datetime.now(timezone.utc).isoformat(),
                 "workflow_state.current_step": None,
-                "workflow_state.completed_steps": workflow_state["completed_steps"] # Save the updated history
+                "workflow_state.completed_steps": workflow_state["completed_steps"]
             }})
             await log_audit(user_id, "WORKFLOW_COMPLETE", f"task-{task_id}", {})
             return {"status": "completed"}
@@ -605,8 +599,22 @@ async def get_tasks(status: Optional[str] = None, priority: Optional[str] = None
     if status: query["status"] = status
     if priority: query["priority"] = priority
     if assignee_id: query["assignee_id"] = assignee_id
+    
     if current_user.role not in ["super_admin", "admin"]:
-        query["$or"] = [{"assignee_id": current_user.id}, {"creator_id": current_user.id},{"assignee_id": None, "assignee_group": {"$ne": None}}]
+        # ✅ STRICT GROUP FILTERING APPLIED HERE
+        or_conditions = [
+            {"assignee_id": current_user.id},          # 1. Assigned to me
+            {"creator_id": current_user.id}            # 2. Created by me
+        ]
+        
+        # 3. Group tasks ONLY if they match my group
+        if current_user.user_group:
+            or_conditions.append({
+                "assignee_id": None, 
+                "assignee_group": current_user.user_group
+            })
+            
+        query["$or"] = or_conditions
     
     total = await db.tasks.count_documents(query)
     tasks = await db.tasks.find(query, {"_id": 0}).skip(offset).limit(limit).to_list(limit)
@@ -647,7 +655,9 @@ async def get_task(task_id: str, current_user: User = Depends(get_current_user))
     
     if current_user.role not in ["super_admin", "admin"]:
         if task.get("assignee_id") != current_user.id and task.get("creator_id") != current_user.id:
-            raise HTTPException(status_code=403, detail="Access denied")
+            # Allow if group matches
+            if task.get("assignee_group") != current_user.user_group:
+                raise HTTPException(status_code=403, detail="Access denied")
     return Task(**task)
 
 @api_router.put("/tasks/{task_id}", response_model=Task)

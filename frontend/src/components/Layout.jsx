@@ -28,6 +28,12 @@ export default function Layout({ children, user, setUser }) {
       { name: 'Audit Logs', href: '/admin/audit-logs', icon: Shield }
     );
   }
+  // ✅ NEW: Super Admin Only Items
+  if (user?.role === 'super_admin') {
+    navigation.push(
+      { name: 'Onboard Tenant', href: '/admin/onboard', icon: Building2 }
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f5f7fa]">

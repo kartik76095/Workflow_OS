@@ -30,7 +30,7 @@ export default function Enterprise({ user }) {
     ssl_enabled: false,
     sync_users: false,
     user_table_name: 'users',
-    user_group_column: 'department' // ✅ NEW: Default value
+    user_group_column: 'department' 
   });
 
   useEffect(() => {
@@ -92,7 +92,10 @@ export default function Enterprise({ user }) {
     const token = localStorage.getItem('token');
     try {
       const res = await axios.post(`${API}/organizations/database-connections/${connectionId}/sync-users`, {}, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.data.status === 'success') toast.success(`Successfully synced ${res.data.synced_count} users`);
+      if (res.data.status === 'success') {
+          // ✅ UPDATED MESSAGE
+          toast.success(`Successfully Synced ${res.data.synced_count} Users, Updated ${res.data.updated_count} Users`);
+      }
       else toast.error(`User sync failed: ${res.data.message}`);
     } catch (error) { toast.error('User sync failed'); }
   };
@@ -136,14 +139,12 @@ export default function Enterprise({ user }) {
                     <label className="flex items-center space-x-2"><input type="checkbox" checked={newConnection.sync_users} onChange={(e) => setNewConnection({ ...newConnection, sync_users: e.target.checked })} /><span className="text-sm font-medium">Sync Users</span></label>
                   </div>
 
-                  {/* ✅ DYNAMIC CONFIGURATION FOR USER SYNC */}
                   {newConnection.sync_users && (
                     <div className="bg-blue-50 p-3 rounded-md border border-blue-100 animate-in fade-in slide-in-from-top-2 space-y-3">
                       <div>
                         <label className="block text-xs font-medium text-blue-800 mb-1">Source Table Name</label>
                         <Input value={newConnection.user_table_name} onChange={(e) => setNewConnection({ ...newConnection, user_table_name: e.target.value })} placeholder="e.g. employees" className="bg-white h-8 text-sm" />
                       </div>
-                      {/* ✅ THIS IS THE NEW FIELD */}
                       <div>
                         <label className="block text-xs font-medium text-blue-800 mb-1">Group/Department Column</label>
                         <Input value={newConnection.user_group_column} onChange={(e) => setNewConnection({ ...newConnection, user_group_column: e.target.value })} placeholder="e.g. department, team_name" className="bg-white h-8 text-sm" />

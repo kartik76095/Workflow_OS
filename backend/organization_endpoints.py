@@ -20,7 +20,6 @@ class DatabaseConnection(BaseModel):
     ssl_enabled: bool = False
     sync_users: bool = False
     user_table_name: str = Field(default="users", description="The table to sync users from")
-    # ✅ NEW: Dynamic column mapping for User Group
     user_group_column: str = Field(default="department", description="Column to map to user group")
 
 @router.get("/organizations/database-connections")
@@ -71,64 +70,83 @@ async def sync_users(connection_id: str, current_user = Depends(require_admin)):
     if conn.get('ssl_enabled'): db_url += "?sslmode=require"
 
     synced_count = 0
+    updated_count = 0
     
+    engine = create_engine(db_url)
+    
+    table_name = conn.get("user_table_name", "users")
+    group_col = conn.get("user_group_column", "department")
+
+    if not table_name.replace("_", "").isalnum() or not group_col.replace("_", "").isalnum():
+        raise HTTPException(status_code=400, detail="Invalid table or column name")
+
+    result_rows = []
+
     try:
-        engine = create_engine(db_url)
         with engine.connect() as connection:
-            table_name = conn.get("user_table_name", "users")
-            # ✅ GET DYNAMIC GROUP COLUMN
-            group_col = conn.get("user_group_column", "department")
+            query = text(f'SELECT email, full_name, "{group_col}" FROM "{table_name}"')
+            result_rows = connection.execute(query).fetchall()
             
-            # Basic SQL Injection protection
-            if not table_name.replace("_", "").isalnum() or not group_col.replace("_", "").isalnum():
-                raise HTTPException(status_code=400, detail="Invalid table or column name")
-                
-            # ✅ DYNAMIC QUERY: Fetch group column
-            try:
+    except Exception as e1:
+        print(f"Quoted sync failed: {e1}. Retrying unquoted...")
+        try:
+            with engine.connect() as connection:
                 query = text(f"SELECT email, full_name, {group_col} FROM {table_name}")
-                result = connection.execute(query)
-            except Exception as e:
-                # Fallback if column doesn't exist (to prevent crash)
-                query = text(f"SELECT email, full_name, 'General' as {group_col} FROM {table_name}")
-                result = connection.execute(query)
+                result_rows = connection.execute(query).fetchall()
+        except Exception as e2:
+            print(f"Unquoted sync failed: {e2}. Using fallback...")
+            try:
+                with engine.connect() as connection:
+                    query = text(f"SELECT email, full_name, 'General' as group_name FROM {table_name}")
+                    result_rows = connection.execute(query).fetchall()
+            except Exception as e3:
+                await db.db_connections.update_one({"id": connection_id}, {"$set": {"sync_status": "error"}})
+                return {"status": "error", "message": f"All sync attempts failed. Error: {str(e3)}"}
+
+    try:
+        for row in result_rows:
+            email = row[0]
+            full_name = row[1]
+            user_group = str(row[2]) if (len(row) > 2 and row[2]) else "General"
             
-            for row in result:
-                email = row[0]
-                full_name = row[1]
-                # ✅ CAPTURE GROUP
-                user_group = str(row[2]) if row[2] else "General"
-                
-                existing = await db.users.find_one({"email": email})
-                
-                if not existing:
-                    new_user = {
-                        "id": str(uuid.uuid4()),
-                        "email": email,
-                        "full_name": full_name,
-                        "role": "user",
-                        "user_group": user_group, # ✅ SAVE GROUP
-                        "organization_id": current_user.organization_id,
-                        "is_active": True,
-                        "created_at": datetime.now().isoformat(),
-                        "source": "external_sync",
-                        "password_hash": hash_password("Katalusis2025!"),
-                        "must_change_password": True
-                    }
-                    await db.users.insert_one(new_user)
-                    synced_count += 1
-                else:
-                    # Update group for existing users
+            existing = await db.users.find_one({"email": email})
+            
+            if not existing:
+                new_user = {
+                    "id": str(uuid.uuid4()),
+                    "email": email,
+                    "full_name": full_name,
+                    "role": "user",
+                    "user_group": user_group,
+                    "organization_id": current_user.organization_id,
+                    "is_active": True,
+                    "created_at": datetime.now().isoformat(),
+                    "source": "external_sync",
+                    "password_hash": hash_password("Katalusis2025!"),
+                    "must_change_password": True
+                }
+                await db.users.insert_one(new_user)
+                synced_count += 1
+            else:
+                # ✅ SMART UPDATE: Only update if the group actually changed
+                current_group = existing.get("user_group")
+                if current_group != user_group:
                     await db.users.update_one(
                         {"email": email},
                         {"$set": {"user_group": user_group}}
                     )
+                    updated_count += 1
 
         await db.db_connections.update_one(
             {"id": connection_id},
             {"$set": {"last_sync": datetime.now().isoformat(), "sync_status": "success"}}
         )
 
-        return {"status": "success", "synced_count": synced_count}
+        return {
+            "status": "success", 
+            "synced_count": synced_count, 
+            "updated_count": updated_count 
+        }
 
     except Exception as e:
         await db.db_connections.update_one({"id": connection_id}, {"$set": {"sync_status": "error"}})
