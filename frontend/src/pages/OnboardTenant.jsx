@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import axios from 'axios';
-import { Building2, Mail, User, CheckCircle2, Copy, ArrowRight } from 'lucide-react';
+// ✅ FIX: Added AlertCircle to imports
+import { Building2, Mail, User, CheckCircle2, Copy, ArrowRight, AlertCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
 import { toast } from 'sonner';
 
-const API = "http://localhost:8000/api";
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+const API = `${BACKEND_URL}/api`;
 
 export default function OnboardTenant({ user }) {
   const [formData, setFormData] = useState({

@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ListTodo, Workflow, BarChart3, Users, Sparkles, Upload, LogOut, Building2, Shield } from 'lucide-react';
+import { LayoutDashboard, ListTodo, Workflow, BarChart3, Users, Sparkles, Upload, LogOut, Building2, Shield, ShieldAlert } from 'lucide-react';
 import { Button } from './ui/button';
 
 export default function Layout({ children, user, setUser }) {
@@ -31,7 +31,9 @@ export default function Layout({ children, user, setUser }) {
   // ✅ NEW: Super Admin Only Items
   if (user?.role === 'super_admin') {
     navigation.push(
-      { name: 'Onboard Tenant', href: '/admin/onboard', icon: Building2 }
+      { name: 'Onboard Tenant', href: '/admin/onboard', icon: Building2 },
+      // ✅ NEW LINK
+      { name: 'Org Manager', href: '/admin/organizations', icon: ShieldAlert }
     );
   }
 

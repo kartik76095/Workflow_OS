@@ -1144,6 +1144,60 @@ async def onboard_tenant(
     
     return {"status": "success", "admin_user": {"email": data.admin_email, "temp_password": temp_password}}
 
+# ==================== TENANT MANAGEMENT (SUPER ADMIN) ====================
+
+@api_router.get("/admin/tenants")
+async def get_all_tenants(current_user: User = Depends(require_role(["super_admin"]))):
+    """List all organizations and their admin users"""
+    # 1. Fetch all organizations
+    orgs = await db.organizations.find({}, {"_id": 0}).to_list(1000)
+    
+    # 2. Fetch all admin users
+    admins = await db.users.find(
+        {"role": {"$in": ["admin"]}}, 
+        {"_id": 0, "password_hash": 0}
+    ).to_list(1000)
+    
+    # 3. Map admins to organizations
+    org_map = {org["id"]: {**org, "admins": []} for org in orgs}
+    
+    # Handle users who might be orphaned or in deleted orgs (edge case)
+    for admin in admins:
+        org_id = admin.get("organization_id")
+        if org_id in org_map:
+            org_map[org_id]["admins"].append(admin)
+            
+    return {"tenants": list(org_map.values())}
+
+@api_router.post("/admin/users/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: str, 
+    current_user: User = Depends(require_role(["super_admin"]))
+):
+    """Reset a user's password to a temp one and force change"""
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Generate secure temp password
+    temp_password = f"Reset{uuid.uuid4().hex[:6].upper()}!"
+    new_hash = hash_password(temp_password)
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {
+            "password_hash": new_hash,
+            "must_change_password": True, # ✅ Forces change on next login
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    await log_audit(current_user.id, "PASSWORD_RESET", f"user-{user_id}", {"target_email": user["email"]})
+    
+    return {"status": "success", "temp_password": temp_password, "email": user["email"]}
+
+# ==================== HEALTH CHECK ====================
+
 @api_router.get("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
